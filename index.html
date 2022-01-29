@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Defy: Audio Demake Tool for PICO-8</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css" integrity="sha384-B0vP5xmATw1+K9KRQjQERJvTumQW0nPEzvF6L/Z6nronJ3oUOFUFpCjEUQouq2+l" crossorigin="anonymous">
+<link rel="stylesheet" href="defy.css">
+</head>
+<body>
+	<h1 class="text-center display-4">Defy: Audio Demake Tool for PICO-8</h1>
+	<div class="container">
+		<div class="row justify-content-center">
+			<div class="col-md-auto">
+				<div class="row justify-content-center">
+					<div>
+						<div id="FileDrop">
+							<div  id="Text">Drop audio file here or click to choose file.</div>
+							<input type="file" accept="audio">
+						</div>
+					</div>
+				</div>
+				<div class="row justify-content-center"> 
+					<div class="col-md-auto">
+
+						<button class="btn btn-info" id="defy-play" type="button" disabled>Play</button>
+						<button class="btn btn-info" id="defy-copy" type="button" disabled>Copy SFX</button>
+					</div>
+				</div>
+				<div class="row"> 
+					<div class="col-md">
+						<div id="defy-sfx" class="d-none"></div>
+						<div class="text-info d-none text-right" id="copied"><em> Copied!</em></div>
+					</div>
+				</div>
+			</div>
+			<div class="col-md-auto">
+				<div class="defy-container"></div>	
+			</div>
+		</div>
+	</div>
+		
+	<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+	<script type="text/javascript" src="defy.js"></script>	
+
+<script type="text/javascript">
+	
+	if (!(window.File && window.FileReader && window.FileList && window.Blob))
+	{
+		document.querySelector("#FileDrop #Text").textContent ="Reading files not supported by this browser";
+	} 
+	else
+	{
+		const fileDrop = document.querySelector("#FileDrop");
+
+		fileDrop.addEventListener("dragenter", () =>
+			fileDrop.classList.add("Hover")
+		)
+
+		fileDrop.addEventListener("dragleave", () =>
+			fileDrop.classList.remove("Hover")
+		)
+
+		fileDrop.addEventListener("drop", () =>
+			fileDrop.classList.remove("Hover")
+		)
+
+		document.querySelector("#FileDrop input").addEventListener("change", (e) => 
+		{
+			const files = e.target.files
+			if (files.length > 0) {
+				const file = files[0]
+				document.querySelector("#FileDrop #Text").textContent = file.name
+				processFile(file)
+				
+			}
+		})
+		document.querySelector("#FileDrop input").addEventListener("click", (e) => 
+		{
+		//	p8_create_audio_context()
+	//		p8_run_cart() 
+		})
+		document.querySelector("#FileDrop input").addEventListener("drop", (e) => 
+		{
+	//		p8_create_audio_context()
+	//		p8_run_cart() 
+		})
+		
+		document.querySelector("#defy-copy").addEventListener("click",(e)=>
+		{
+			var sfx=document.getElementById("defy-sfx")
+			sfx.classList.remove("d-none")
+			var range = document.createRange()
+			range.selectNode(sfx)
+			window.getSelection().removeAllRanges()
+			window.getSelection().addRange(range)
+			document.execCommand('copy')
+			window.getSelection().removeAllRanges()
+			sfx.classList.add("d-none")
+			var copied= document.getElementById("copied")
+			copied.classList.remove("d-none")
+			setTimeout(()=>copied.classList.add("d-none"), 1000)
+		})
+	}
+
+	function processFile(file)
+	{
+		//https://developer.mozilla.org/en-US/docs/Web/API/OfflineAudioContext/startRendering
+
+		var audioContext = new (window.AudioContext || window.webkitAudioContext)();
+		var fileReader = new FileReader()
+		var soundSource
+		fileReader.onload = function(e)
+		{
+	    	audioContext.decodeAudioData(e.target.result).then(function(buffer)
+			{
+				offlineAudioContext= new OfflineAudioContext(
+				{
+  					numberOfChannels: 1,
+  					length: 5512.5 * buffer.duration,
+  					sampleRate: 5512.5,
+				})
+				source = offlineAudioContext.createBufferSource()
+				source.buffer = buffer
+				
+				source.connect(offlineAudioContext.destination)
+				source.start()
+				offlineAudioContext.startRendering().then(function(renderedBuffer)
+				{
+					var lastValue=0
+					console.log(String.fromCharCode(...renderedBuffer.getChannelData(0).map((data,index,array)=>
+					{	
+						
+						value=Math.floor(data*128)+128-lastValue
+						lastValue=value+lastValue
+						return value
+
+					})))
+
+					playback(renderedBuffer)
+				})
+			})	
+		}	  
+		fileReader.readAsArrayBuffer(file)
+	}
+
+	/*switch(c) {
+			case 0: fputs("\\000",outfile); break;
+			case 1: fputs("¹",outfile); break;
+			case 2: fputs("²",outfile); break;
+			case 3: fputs("³",outfile); break;
+			case 4: fputs("⁴",outfile); break;
+			case 5: fputs("⁵",outfile); break;
+			case 6: fputs("⁶",outfile); break;
+			case 7: fputs("⁷",outfile); break;
+			case 8: fputs("⁸",outfile); break;
+			case 9: fputs("\\t",outfile); break;
+			case 10: fputs("\\n",outfile); break;
+			case 11: fputs("ᵇ",outfile); break;
+			case 12: fputs("ᶜ",outfile); break;
+			case 13: fputs("\\r",outfile); break;
+			case 14: fputs("ᵉ",outfile); break;
+			case 15: fputs("ᶠ",outfile); break;
+			case 92: fputs("\\\\",outfile); break;
+			case 34: fputs("\\\"",outfile); break;
+			default: fputc(c, outfile); break;
+		}
+*/
+	function playback(buffer)
+	{
+		var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+		var sound = audioCtx.createBufferSource()
+		sound.buffer = buffer
+		sound.connect(audioCtx.destination)
+		sound.start()
+	}
+	</script>
+</body>
+</html>	
