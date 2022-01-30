@@ -29,13 +29,13 @@
 				</div>
 				<div class="row"> 
 					<div class="col-md">
-						<div id="defy-sfx" class="d-none"></div>
+						<div id="defy-audio" class="d-none"></div>
 						<div class="text-info d-none text-right" id="copied"><em> Copied!</em></div>
 					</div>
 				</div>
 			</div>
 			<div class="col-md-auto">
-				<div class="defy-container"></div>	
+				<button class="btn btn-info" id="defy-copy" type="button">Copy Audio String</button>	
 			</div>
 		</div>
 	</div>
@@ -90,92 +90,22 @@
 		
 		document.querySelector("#defy-copy").addEventListener("click",(e)=>
 		{
-			var sfx=document.getElementById("defy-sfx")
-			sfx.classList.remove("d-none")
+			var audio=document.getElementById("defy-audio")
+			audio.classList.remove("d-none")
 			var range = document.createRange()
 			range.selectNode(sfx)
 			window.getSelection().removeAllRanges()
 			window.getSelection().addRange(range)
 			document.execCommand('copy')
 			window.getSelection().removeAllRanges()
-			sfx.classList.add("d-none")
+			audio.classList.add("d-none")
 			var copied= document.getElementById("copied")
 			copied.classList.remove("d-none")
 			setTimeout(()=>copied.classList.add("d-none"), 1000)
 		})
 	}
 
-	function processFile(file)
-	{
-		//https://developer.mozilla.org/en-US/docs/Web/API/OfflineAudioContext/startRendering
-
-		var audioContext = new (window.AudioContext || window.webkitAudioContext)();
-		var fileReader = new FileReader()
-		var soundSource
-		fileReader.onload = function(e)
-		{
-	    	audioContext.decodeAudioData(e.target.result).then(function(buffer)
-			{
-				offlineAudioContext= new OfflineAudioContext(
-				{
-  					numberOfChannels: 1,
-  					length: 5512.5 * buffer.duration,
-  					sampleRate: 5512.5,
-				})
-				source = offlineAudioContext.createBufferSource()
-				source.buffer = buffer
-				
-				source.connect(offlineAudioContext.destination)
-				source.start()
-				offlineAudioContext.startRendering().then(function(renderedBuffer)
-				{
-					var lastValue=0
-					console.log(String.fromCharCode(...renderedBuffer.getChannelData(0).map((data,index,array)=>
-					{	
-						
-						value=Math.floor(data*128)+128-lastValue
-						lastValue=value+lastValue
-						return value
-
-					})))
-
-					playback(renderedBuffer)
-				})
-			})	
-		}	  
-		fileReader.readAsArrayBuffer(file)
-	}
-
-	/*switch(c) {
-			case 0: fputs("\\000",outfile); break;
-			case 1: fputs("¹",outfile); break;
-			case 2: fputs("²",outfile); break;
-			case 3: fputs("³",outfile); break;
-			case 4: fputs("⁴",outfile); break;
-			case 5: fputs("⁵",outfile); break;
-			case 6: fputs("⁶",outfile); break;
-			case 7: fputs("⁷",outfile); break;
-			case 8: fputs("⁸",outfile); break;
-			case 9: fputs("\\t",outfile); break;
-			case 10: fputs("\\n",outfile); break;
-			case 11: fputs("ᵇ",outfile); break;
-			case 12: fputs("ᶜ",outfile); break;
-			case 13: fputs("\\r",outfile); break;
-			case 14: fputs("ᵉ",outfile); break;
-			case 15: fputs("ᶠ",outfile); break;
-			case 92: fputs("\\\\",outfile); break;
-			case 34: fputs("\\\"",outfile); break;
-			default: fputc(c, outfile); break;
-		}
-*/
-	function playback(buffer)
-	{
-		var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-		var sound = audioCtx.createBufferSource()
-		sound.buffer = buffer
-		sound.connect(audioCtx.destination)
-		sound.start()
-	}
+	
 	</script>
 </body>
 </html>	

@@ -1,40 +1,71 @@
 pico-8 cartridge // http://www.pico-8.com
 version 34
 __lua__
---defy audio player
+--defy pcm channel audio player
 --by bikibird
---inspired by https://www.lexaloffle.com/bbs/?tid=41991
-
-function defyPlayer(clip,loop)
-	local i
-	local buffer,index=0x8000,1
-	while true do
+index=1
+defy_player={buffer=0x8000}
+function defy_player:load(clip,loop)
+	self.clip=clip
+	self.loop=loop or false
+	self.done=false
+	self.index=1
+	return self
+end
+function defy_player:play()
+	if not self.done then
+		local i
 		while stat(108)<1536 do
 			for i=0,511 do
-				poke (buffer+i,ord(clip,index))
-				index+=1
-				if (index>#clip) then
-					if (loop) then
-						index=1
+				poke (self.buffer+i,ord(self.clip,self.index))
+				self.index+=1
+				if (self.index>#self.clip) then
+					if (self.loop) then
+						self.index=1
 					else
-						serial(0x808,buffer,i)
-						return
+						serial(0x808,self.buffer,i+1)
+						self.done=true
+						return true
 					end
 				end
 			end
-			serial(0x808,buffer,512)
+			serial(0x808,self.buffer,512)
 		end
-		yield()
 	end	
 end
----audio.clips[1]="abcdefghihgfedcb"
+function defy_player:play2()
+	if not self.done then
+		local i
+		while stat(108)<1536 do
+			for i=0,511 do
+				poke (self.buffer+i,self.clip[self.index])
+				self.index+=1
+				if (self.index>#self.clip) then
+					if (self.loop) then
+						self.index=1
+					else
+						serial(0x808,self.buffer,i+1)
+						self.done=true
+						return true
+					end
+				end
+			end
+			serial(0x808,self.buffer,512)
+		end
+	end	
+end
 _init=function()
-	audio=cocreate(defyPlayer)
+	--defy_player:load("abcdefghihgfedcb",true)
+	defy_player:load("{}~~|yz}~wy~~}}~~~z|}v|~{nvyz~{}x~||wwuz~{}}}~}{{sxuv}~}~}z~}}|~{~}|}}{z~t~p{|wt|~|wvxyz{w|z|}{}y}~|{}}l~sv}z{p~zvw}{wuzz|ww{ws}}xrz{qq|~lmnzsitmdtzlmvwiywtwvqipkssoaxninusswxs{}oqxwomttiq|twwyxx}ulx~nkyxxk}zpz~~yz~z}s}w|qqysn}wju|pv}mq}jg|qjn}niqj|mqyssswnmkn~nntysroqzvtt{ys|||uv}{rqxvz~|}z|{yu~|w}vx~~x}}x{s{~}z~|~}}w|~~s}x{{|~{y~~z|~t}|}}rw{z}~x~}z~y~z~~z|~}swws{w||}srt|p~sp{yqw|suwyxwrt|zu~{r}|~z~}{~y}{~{wv}zyz~{|}y{zy|w}|zwsv|xxzv~{|}~|wuv|qzi~nksm}}p}~xg}}f~j|zvr}yqytkzh|p~x}uu{uzttrb\\lkbuk}{o{hk xrv{n¢zi{m{~i`lwgiunwxk~ag}llydaftr¡hsdafnr¤huf_`¡tlj`\\cptc^c{jiw bddtkhw¤de^sllzebdtnk}ebmrul~hgrtxlim~vtznmq|xxzqpv|{x|soy{~v{tsx|~w{uwy|~w~uy|{|wuz}|{|vvz|{{~uwy{|zsxyz~ysw~yzwvv}{yvw~w{|xuv~yy~wux~zxwuz}{yuy~{|~yty~}|xx~{~{y|}}}{{~~}|}~}|{}~}}{~||{}{{z}|~zzz}}|zy~|~~{z{}}}|||}~~|}~~~~~~~~~~~~~~~}~~~~~~~~~~~~~~~~~~~~~}}}~~}}~~~}~~~~~~~~~~~~~~")
 end
 _update=function()
-	
-	if (not btn(5)) then
-		coresume(audio,"abcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcbabcdefghihgfedcb",true)
-		
-	end	
+	defy_player:play()
+
 end
+--[[_draw=function()
+	cls(black)
+	print(ord(defy_player.clip,index))
+	index+=1
+
+end]]
+
