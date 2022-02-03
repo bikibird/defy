@@ -1,3 +1,20 @@
+.table{
+	display: table;
+	width:fit-content;
+  }
+.table-row{
+	display: table-row;
+	width:fit-content;
+}
+.table-cell{
+	display: table-cell;
+	padding:.5em;
+	vertical-align: top;
+	width:fit-content;
+}
+.table-cell-middle{
+	vertical-align: middle;
+}
 .defy-player {
 	cursor: none;
 	width:150px;

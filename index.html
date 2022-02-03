@@ -9,43 +9,39 @@
 </head>
 <body>
 	<h1 class="text-center display-4">Defy: Audio Demake Tool for PICO-8</h1>
-	<div class="container">
-		<div class="row justify-content-center">
-			<div class="col-md-auto">
-				<div class="row justify-content-center">
-					<div>
-						<div id="FileDrop">
-							<div  id="Text">Drop audio file here or click to choose file.</div>
-							<input type="file" accept="audio">
-						</div>
+	
+	<div class="table mx-auto">
+		<div class="table-row">
+			<div class="table-cell">
+				<div class="table-row"><div class="table-cell">
+					<div id="FileDrop">
+						<div  id="Text">Drop audio file here or click to choose file.</div>
+						<input type="file" accept="audio">
 					</div>
-				</div>
-				<div class="row justify-content-center"> 
-					<div class="col-md-auto">
-
-						<button class="btn btn-info" id="defy-play" type="button" disabled>Play</button>
-						<button class="btn btn-info" id="defy-copy" type="button" disabled>Copy SFX</button>
-					</div>
-				</div>
-				<div class="row"> 
-					<div class="col-md">
-						<div id="defy-audio" class="d-none"></div>
-						<div class="text-info d-none text-right" id="copied"><em> Copied!</em></div>
-					</div>
-				</div>
+				</div></div>
 			</div>
-			<div class="col-md-auto">
-				<button class="btn btn-info" id="defy-copy" type="button">Copy Audio String</button>	
+			<div class="table-cell">
+				<div class="table-row"><div class="table-cell"><div>Use this tool to download a raw, 8-bit, unsigned, 5512.5K PCM data file from any audio file.</div></div></div>
+				<div class="table-row"><div class="table-cell"><div>To use the PCM file with PICO-8:
+					<ol>
+						<li>In PICO-8, type <kbd>load #defy</kbd> at the command prompt.</li>
+						<li>Then type <kbd>run</kbd>.</li>
+						<li>Drag and drop the PCM file onto PIC0-8 to hear the clip.</li>
+						<li>When the file is done playing, a compressed PCM string is copied to your computer's clipboard.</li>
+						<li>The following code may be used in your own carts to play the PCM string.</li>
+					</ol>
+				</div></div></div>
 			</div>
-		</div>
+		</div>				
 	</div>
+	
 		
-	<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
-	<script type="text/javascript" src="defy.js"></script>	
+<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
 
 <script type="text/javascript">
+	
 	
 	if (!(window.File && window.FileReader && window.FileList && window.Blob))
 	{
@@ -73,39 +69,51 @@
 			if (files.length > 0) {
 				const file = files[0]
 				document.querySelector("#FileDrop #Text").textContent = file.name
+				
 				processFile(file)
 				
 			}
 		})
-		document.querySelector("#FileDrop input").addEventListener("click", (e) => 
-		{
-		//	p8_create_audio_context()
-	//		p8_run_cart() 
-		})
-		document.querySelector("#FileDrop input").addEventListener("drop", (e) => 
-		{
-	//		p8_create_audio_context()
-	//		p8_run_cart() 
-		})
-		
-		document.querySelector("#defy-copy").addEventListener("click",(e)=>
-		{
-			var audio=document.getElementById("defy-audio")
-			audio.classList.remove("d-none")
-			var range = document.createRange()
-			range.selectNode(sfx)
-			window.getSelection().removeAllRanges()
-			window.getSelection().addRange(range)
-			document.execCommand('copy')
-			window.getSelection().removeAllRanges()
-			audio.classList.add("d-none")
-			var copied= document.getElementById("copied")
-			copied.classList.remove("d-none")
-			setTimeout(()=>copied.classList.add("d-none"), 1000)
-		})
-	}
 
+	}
+	function processFile(file)
+	{
+		var audioContext = new (window.AudioContext || window.webkitAudioContext)();
+		var fileReader = new FileReader()
+		fileReader.onload = function(e)
+		{
+			audioContext.decodeAudioData(e.target.result).then(function(buffer)
+			{
+				offlineAudioContext= new OfflineAudioContext(
+				{
+					numberOfChannels: 1,
+					length: 5512.5 * buffer.duration,
+					sampleRate: 5512.5,
+				})
+				source = offlineAudioContext.createBufferSource()
+				source.buffer = buffer
+				
+				source.connect(offlineAudioContext.destination)
+				source.start()
+				offlineAudioContext.startRendering().then(function(renderedBuffer)
+				{
+					save(new Uint8Array(renderedBuffer.getChannelData(0).map(data=>Math.floor(data*128)+128)),file.name)
+				})
+			})	
+		}	  
+		fileReader.readAsArrayBuffer(file)
+	}
+	function save(data,filename) 
+	{
+		var file = new Blob([data]);
+		console.log(file)
+		var link = document.createElement('a')
+		link.href = URL.createObjectURL(file)
+		link.download = `defiance_${filename.split(".")[0]}.pcm`
+		link.click()
+	}
 	
-	</script>
+	
+</script>
 </body>
 </html>	
