@@ -34,6 +34,7 @@
 			</div>
 		</div>				
 	</div>
+	<pre id="dpcm">this is text</pre>
 	
 		
 <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
@@ -41,15 +42,13 @@
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
 
 <script type="text/javascript">
-	
-	
 	if (!(window.File && window.FileReader && window.FileList && window.Blob))
 	{
-		document.querySelector("#FileDrop #Text").textContent ="Reading files not supported by this browser";
+		document.querySelector("#FileDrop #Text").textContent ="Reading files not supported by this browser"
 	} 
 	else
 	{
-		const fileDrop = document.querySelector("#FileDrop");
+		const fileDrop = document.querySelector("#FileDrop")
 
 		fileDrop.addEventListener("dragenter", () =>
 			fileDrop.classList.add("Hover")
@@ -70,15 +69,90 @@
 				const file = files[0]
 				document.querySelector("#FileDrop #Text").textContent = file.name
 				
-				processFile(file)
+				processFile(file,1) //0== 8-bit unsigned pcm.  1== adpcm
 				
 			}
 		})
 
 	}
-	function processFile(file)
+	function processFile(file, format)
 	{
-		var audioContext = new (window.AudioContext || window.webkitAudioContext)();
+		//DVI ADPCM http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pdf
+		var predictedSample = 0		// output of ADPCM predictor 
+		var index = 0 				// index into stepsizeTable
+		var step = 7           // quantizer stepsize
+		var indexTable= [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
+		var stepTable = 
+		[
+			7, 8, 9, 10, 11, 12, 13, 14,16, 17, 19, 21, 23, 25, 28, 31,
+			34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143,
+			157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658,
+			724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024,
+			3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,	15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,32767
+		]
+		var adpcm=function(sample)
+		{
+
+			var delta = sample - predictedSample
+			if (delta >= 0) // set sign bit and find absolute value of difference 
+			{
+				var sign = 0 
+			}
+			else
+			{
+				var sign = 8 
+				delta = -delta 
+			}
+			var tempStep=step
+			var magnitude=0
+			var mask=4
+			for (i = 0; i < 3 ; i++ ) /* quantize difference down to four bits */
+			{
+				if (delta>=tempStep)
+				{ 
+					magnitude=magnitude+mask /* perform division ... */
+					delta = delta - tempStep /* ... through repeated subtraction */
+				}
+				tempStep=tempStep/2
+				mask=mask/2
+			}
+
+			var newSample=sign+magnitude
+
+			difference = 0; // calculate difference = (newSample + ½) * stepsize/4
+		if (magnitude >= 4 ) // perform multiplication through repetitive addition
+		{
+			delta =delta + step
+			magnitude=magnitude-4
+		}
+		if (magnitude >= 2)
+		{
+			delta =delta+step/2
+			magnitude=magnitude-2
+		}
+		if (magnitude >=1)
+		{
+			delta =delta+step/4
+		}
+		delta=delta+step/8
+		if (sign===8) {delta=-delta}
+		predictedSample=predictedSample+delta
+		if (predictedSample > 32767){predictedSample = 32767} /* check for overflow */
+		else 
+		{
+			if (predictedSample < -32768){predictedSample = -32768}
+		}	
+		index =index+ indexTable[newSample]
+		if (index < 0){index = 0} /* check for index underflow */
+		else
+		{
+			if (index > 88)index = 88 /* check for index overflow */
+		} 
+		step = stepTable[index] /* find new quantizer stepsize */
+		return newSample
+
+	}
+		var audioContext = new (window.AudioContext || window.webkitAudioContext)()
 		var fileReader = new FileReader()
 		fileReader.onload = function(e)
 		{
@@ -88,32 +162,59 @@
 				{
 					numberOfChannels: 1,
 					length: 5512.5 * buffer.duration,
-					sampleRate: 5512.5,
+					sampleRate: 22050, 
 				})
 				source = offlineAudioContext.createBufferSource()
 				source.buffer = buffer
-				
+				source.detune.value = 2400  //Raise two octaves.  22050/4 = 5512.5
 				source.connect(offlineAudioContext.destination)
 				source.start()
 				offlineAudioContext.startRendering().then(function(renderedBuffer)
 				{
-					save(new Uint8Array(renderedBuffer.getChannelData(0).map(data=>Math.floor(data*128)+128)),file.name)
+					switch (format) {
+						case 0:
+							var data= new Uint8Array(renderedBuffer.getChannelData(0).map(value=>Math.floor(value*128)+128))
+							break
+						case 1:
+							
+							var dataIn= new Int16Array(renderedBuffer.getChannelData(0).map(value=>Math.floor(value*32768)))	
+							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/2+.5)}, (_, i) =>
+							{
+								var value=adpcm(dataIn[i*2])*16  //hi nibble
+								var j=i*2+1
+								if (j<dataIn.length){value=value+adpcm(dataIn[j])}	//lo nibble
+								return value
+							}))
+						default:
+							break
+					}
+					
+					save(data,file.name,format)
 				})
 			})	
 		}	  
 		fileReader.readAsArrayBuffer(file)
 	}
-	function save(data,filename) 
+	
+	function save(data,filename,format) 
 	{
-		var file = new Blob([data]);
-		console.log(file)
+		var file = new Blob([data])
 		var link = document.createElement('a')
 		link.href = URL.createObjectURL(file)
-		link.download = `defiance_${filename.split(".")[0]}.pcm`
+		switch (format) 
+		{
+			case 0:
+				link.download = `defiance_${filename.split(".")[0]}.pcm`
+				break
+			case 1:	
+				link.download = `defiance_${filename.split(".")[0]}.adpcm`
+				break
+			case 2: 
+				link.download = `defiance_${filename.split(".")[0]}.defy`
+				break	
+		}		
 		link.click()
 	}
-	
-	
 </script>
 </body>
 </html>	
