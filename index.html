@@ -83,13 +83,15 @@
 		var step = 7           // quantizer stepsize
 		var indexTable= [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
 		var stepTable = 
-		[
+	/*	[
 			7, 8, 9, 10, 11, 12, 13, 14,16, 17, 19, 21, 23, 25, 28, 31,
 			34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143,
 			157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658,
 			724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024,
 			3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,	15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,32767
-		]
+		]*/
+		[ 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 49, 54, 50, 66, 72, 79, 87, 97, 106, 116, 127]
+		console.log(stepTable.map(value=>value/256))
 		var adpcm=function(sample)
 		{
 
@@ -137,16 +139,16 @@
 		delta=delta+step/8
 		if (sign===8) {delta=-delta}
 		predictedSample=predictedSample+delta
-		if (predictedSample > 32767){predictedSample = 32767} /* check for overflow */
+		if (predictedSample > 127){predictedSample = 127} /* check for overflow */
 		else 
 		{
-			if (predictedSample < -32768){predictedSample = -32768}
+			if (predictedSample < -128){predictedSample = -128}
 		}	
 		index =index+ indexTable[newSample]
 		if (index < 0){index = 0} /* check for index underflow */
 		else
 		{
-			if (index > 88)index = 88 /* check for index overflow */
+			if (index >=stepTable.length)index = stepTable.length-1 /* check for index overflow */
 		} 
 		step = stepTable[index] /* find new quantizer stepsize */
 		return newSample
@@ -176,8 +178,7 @@
 							var data= new Uint8Array(renderedBuffer.getChannelData(0).map(value=>Math.floor(value*128)+128))
 							break
 						case 1:
-							
-							var dataIn= new Int16Array(renderedBuffer.getChannelData(0).map(value=>Math.floor(value*32768)))	
+							var dataIn= new Int8Array(renderedBuffer.getChannelData(0).map(value=>Math.floor(value*128)))	
 							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/2+.5)}, (_, i) =>
 							{
 								var value=adpcm(dataIn[i*2])*16  //hi nibble

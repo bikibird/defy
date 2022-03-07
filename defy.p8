@@ -6,7 +6,8 @@ __lua__
 left,right,up,down,fire1,fire2=0,1,2,3,4,5
 black,dark_blue,dark_purple,dark_green,brown,dark_gray,light_gray,white,red,orange,yellow,green,blue,indigo,pink,peach=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 
-buffer=0x8000
+audio_buffer=0x8000
+buffer=0xa000
 pcm_string=""
 index=0
 recording=false
@@ -55,6 +56,24 @@ function play_from_serial()
 		end	
 	end	
 end
+function play_from_serial_4()
+	if not done then
+		local request
+		local next_value
+		local i
+		while stat(108)<1536 do
+			if stat(120) then
+				receipt = serial(0x800, buffer, 256)
+				for i=0,receipt-1 do
+					poke(audio_buffer+i*2,adpcm(flr(@(buffer+i)>>>4),adpcm(@(buffer+i)&15)))
+				end
+				if (recording==true) update_pcm_string(receipt)
+				serial(0x808,audio_buffer,receipt*2)	
+			end
+		end	
+	end	
+end
+
 function record(lossy_option)  --add lossy vs lossless options
 	pcm_string=""
 	recording=true
@@ -62,6 +81,7 @@ function record(lossy_option)  --add lossy vs lossless options
 end
 function escape_binary_str(s)  --https://www.lexaloffle.com/bbs/?tid=38692
 	local out=""
+	local i
 	for i=1,#s do
 	 local c  = sub(s,i,i)
 	 local nc = ord(s,i+1)
@@ -76,48 +96,30 @@ function escape_binary_str(s)  --https://www.lexaloffle.com/bbs/?tid=38692
 	end
 	return out
 end
-function adpcm(sample) --http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pdf
-	local indexTable = {[0]=–1, –1, –1, –1, 2, 4, 6, 8, –1, –1, –1, –1, 2, 4, 6, 8)
-	local stepTable = {[0]=7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60,66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 1528}
-	local delta = sample – predicted_sample;
-	local i
-	if delta >= 0 then
-		new_sample = 0
-	else
-		new_sample = 8
-		delta = –delta
-	end
-	local mask = 4
-	local temp_step = step
-
-	for i = 0,3 do
-		if delta >= temp_step then
-			new_sample |= mask 
-			delta –= temp_step 
-		end
-		temp_stepsize >>>=1; /* adjust comparator for next iteration */
-		mask >>>=1; /* adjust bit-set mask for next iteration */
-	end
-	new_sample &=15 --truncate decimal portion
-	delta= 0
-	if (new_sample & 4 >0) delta += step
-	if (new_sample & 2 > 0) delta += step >>> 1
-	if (new_sample & 1) delta += step >>> 2
-	delta += step >> 3
-	if (newSample & 8 >0) delta = –delta
-	predicted_sample += delta
-	if (predictedSample > 32767) /* check for overflow */
-predictedSample = 32767;
-else if (predictedSample < –32768)
-predictedSample = –32768;
-/* compute new stepsize */
-/* adjust index into stepsize lookup table using newSample */
-index + = indexTable[newSample];
-if (index < 0) /* check for index underflow */
-index = 0;
-else if (index > 88) /* check for index overflow */
-index = 88;
-stepsize = stepsizeTable[index]; /* find new quantizer stepsize */
+function adpcm(sample) --http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pdf, but adapted for 8 bit
+	local index_table = {[0]=-1,-1,-1,-1,2,4,6,8,-1,-1,-1,-1,2,4,6,8}
+	local step_table = {[0]=7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,49,54,50,66,72,79,87,97,106,116,127}
+	local delta,new_sample = 0,0
+	if (sample & 4>0) delta += step
+	if (sample & 2) delta += flr(step >>> 1)
+	if (sample & 1) delta += flr(step >>> 2)
+	delta += flr(step>>>3)
+	if (sample & 8) delta = -delta
+	new_sample += delta
+	if new_sample > 127 then	
+		new_sample = 127
+	elseif new_sample < -128 then
+		new_sample = -128
+	end	
+	new_sample+=128
+	ad_index += index_table[sample]
+	if ad_index < 0 then 
+		ad_index = 0
+	elseif (ad_index >= #step_table) then
+		ad_index = #step_table-1
+	end	
+	step = step_table[ad_index]
+	return new_sample
 end
 
 
@@ -149,7 +151,7 @@ _init=function()
 	
 end
 _update=function()
-	play_from_serial()
+	play_from_serial_4()
 	--play()
 	if btnp(4) or btnp(5) then
 		record()
