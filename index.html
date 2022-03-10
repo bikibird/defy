@@ -13,13 +13,26 @@
 	<div class="table mx-auto">
 		<div class="table-row">
 			<div class="table-cell">
-				<div class="table-row"><div class="table-cell">
-					<div id="FileDrop">
-						<div  id="Text">Drop audio file here or click to choose file.</div>
-						<input type="file" accept="audio">
+				<div class="table-row">
+					<div class="table-cell">
+						<div id="FileDrop">
+							<div  id="Text">Drop audio file here or click to choose file.</div>
+							<input type="file" accept="audio">
+						</div>
 					</div>
-				</div></div>
+					<div class="table-cell"><select class="form-select custom-select" aria-label="format" id="formatSelection" >
+						<option value="0">PCM</option>
+						<option selected value="1">Defy Lossless</option>
+						<option value="2">Defy Lossy 50%</option>
+					</select></div>
+					<div class="table-cell">
+						<input class="btn btn-info" type="button" value="Generate" id="generateButton">
+					</div>
+					
+				</div>
 			</div>
+		</div>	
+		<div class="table-row">
 			<div class="table-cell">
 				<div class="table-row"><div class="table-cell"><div>Use this tool to download a raw, 8-bit, unsigned, 5512.5K PCM data file from any audio file.</div></div></div>
 				<div class="table-row"><div class="table-cell"><div>To use the PCM file with PICO-8:
@@ -32,7 +45,7 @@
 					</ol>
 				</div></div></div>
 			</div>
-		</div>				
+		</div>			
 	</div>
 	<pre id="dpcm">this is text</pre>
 	
@@ -42,6 +55,8 @@
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
 
 <script type="text/javascript">
+	var filename
+	var file
 	if (!(window.File && window.FileReader && window.FileList && window.Blob))
 	{
 		document.querySelector("#FileDrop #Text").textContent ="Reading files not supported by this browser"
@@ -65,37 +80,39 @@
 		document.querySelector("#FileDrop input").addEventListener("change", (e) => 
 		{
 			const files = e.target.files
-			if (files.length > 0) {
-				const file = files[0]
+			if (files.length > 0) 
+			{
+				file = files[0]
 				document.querySelector("#FileDrop #Text").textContent = file.name
-				
-				processFile(file,1) //0== 8-bit unsigned pcm.  1== adpcm
+				filename=file.name
+				// processFile(file,1) //0== 8-bit unsigned pcm.  1== adpcm
 				
 			}
+		})
+		document.getElementById("generateButton").addEventListener("click", (e) => 
+		{
+			processFile(file,parseInt(document.getElementById("formatSelection").value)) //0== 8-bit unsigned pcm.  1== adpcm
 		})
 
 	}
 	function processFile(file, format)
 	{
-		//DVI ADPCM http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pdf
+		//DVI ADPCM http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pdf adapted for 8-bit unsigned pcm
 		var predictedSample = 0		// output of ADPCM predictor 
 		var index = 0 				// index into stepsizeTable
-		var step = 7           // quantizer stepsize
+		var step =7           // quantizer stepsize
 		var indexTable= [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
-		var stepTable = 
-	/*	[
-			7, 8, 9, 10, 11, 12, 13, 14,16, 17, 19, 21, 23, 25, 28, 31,
-			34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143,
-			157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658,
-			724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024,
-			3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,	15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,32767
-		]*/
-		[ 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 49, 54, 50, 66, 72, 79, 87, 97, 106, 116, 127]
-		console.log(stepTable.map(value=>value/256))
-		var adpcm=function(sample)
+		// big thanks @luchak and @packbat for advice on the step table.
+		var stepTable =[7,8,9,10,11,12,13,14,15,17,19,21,23,25,28,31,34,38,42,46,50,55,61,67,74,81,89,98,108,119,131,144,158,174,192,211,232,255] 
+		//[219,241,265,292,321,353,388,427,469,516,568,625,687,756,832,915,1006,1107,1218,1339,1473,1621,1783,1961,2157,2373,2610,2871,3158,3474,3822,4204,4624,5087,5595,6155,6770,7447] 
+		//[63,69,76,84,92,101,111,123,135,148,163,179,197,217,239,263,289,318,350,385,423,465,512,563,619,681,750,824,907,998,1097,1207,1328,1461,1607,1767,1944,2139,2352,2588,2846,3131,3444,3788,4167,4584,5042,5547,6101,6712,7383,8121,8933,9826,10809,11890,13079,14387,15825,17408] 
+		//[1,1,1,1,1,2,2,2,2,2,3,3,3,3,4,4,5,5,6,6,7,7,8,9,10,11,12,13,14,15,17,19,21,23,25,28,31,34,38,42,46,50,55,61,67,74,81,89,98,108,119,131,144,158,174,192,211,232,255] 
+		var cap=255
+		var unsign=128
+		var adpcm4=function(sample)
 		{
 
-			var delta = sample - predictedSample
+			var delta = Math.trunc((sample*unsign)+unsign) - predictedSample
 			if (delta >= 0) // set sign bit and find absolute value of difference 
 			{
 				var sign = 0 
@@ -115,45 +132,47 @@
 					magnitude=magnitude+mask /* perform division ... */
 					delta = delta - tempStep /* ... through repeated subtraction */
 				}
-				tempStep=tempStep/2
+				tempStep=Math.trunc(tempStep/2)
 				mask=mask/2
 			}
 
 			var newSample=sign+magnitude
 
-			difference = 0; // calculate difference = (newSample + ½) * stepsize/4
-		if (magnitude >= 4 ) // perform multiplication through repetitive addition
-		{
-			delta =delta + step
-			magnitude=magnitude-4
+		
+			if (magnitude >= 4 ) // quantize delta
+			{
+				delta =step
+				magnitude=magnitude-4
+			}	
+			else
+			{
+				delta=0
+			}
+			if (magnitude >= 2)
+			{
+				delta =delta+step/2
+				magnitude=magnitude-2
+			}
+			if (magnitude >=1)
+			{
+				delta =delta+step/4
+			}
+			if (sign===8) {delta=-delta}
+			predictedSample=predictedSample+delta
+			if (predictedSample > cap){predictedSample = cap} /* check for overflow */
+			else 
+			{
+				if (predictedSample < 0){predictedSample = 0}
+			}	
+			index =index+ indexTable[newSample]
+			if (index < 0){index = 0} /* check for index underflow */
+			else
+			{
+				if (index >=stepTable.length)index = stepTable.length-1 /* check for index overflow */
+			} 
+			step = stepTable[index] /* find new quantizer stepsize */
+			return newSample
 		}
-		if (magnitude >= 2)
-		{
-			delta =delta+step/2
-			magnitude=magnitude-2
-		}
-		if (magnitude >=1)
-		{
-			delta =delta+step/4
-		}
-		delta=delta+step/8
-		if (sign===8) {delta=-delta}
-		predictedSample=predictedSample+delta
-		if (predictedSample > 127){predictedSample = 127} /* check for overflow */
-		else 
-		{
-			if (predictedSample < -128){predictedSample = -128}
-		}	
-		index =index+ indexTable[newSample]
-		if (index < 0){index = 0} /* check for index underflow */
-		else
-		{
-			if (index >=stepTable.length)index = stepTable.length-1 /* check for index overflow */
-		} 
-		step = stepTable[index] /* find new quantizer stepsize */
-		return newSample
-
-	}
 		var audioContext = new (window.AudioContext || window.webkitAudioContext)()
 		var fileReader = new FileReader()
 		fileReader.onload = function(e)
@@ -173,17 +192,21 @@
 				source.start()
 				offlineAudioContext.startRendering().then(function(renderedBuffer)
 				{
-					switch (format) {
+					switch (format)
+					{
 						case 0:
-							var data= new Uint8Array(renderedBuffer.getChannelData(0).map(value=>Math.floor(value*128)+128))
+							var data= new Uint8Array(renderedBuffer.getChannelData(0).map(value=>Math.trunc(value*128+128)))
 							break
 						case 1:
-							var dataIn= new Int8Array(renderedBuffer.getChannelData(0).map(value=>Math.floor(value*128)))	
+							var data= new Uint8Array(renderedBuffer.getChannelData(0).map(value=>Math.trunc(value*128+128)))
+							break
+						case 2:
+							var dataIn= renderedBuffer.getChannelData(0)
 							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/2+.5)}, (_, i) =>
 							{
-								var value=adpcm(dataIn[i*2])*16  //hi nibble
+								var value=adpcm4(dataIn[i*2])*16  //hi nibble
 								var j=i*2+1
-								if (j<dataIn.length){value=value+adpcm(dataIn[j])}	//lo nibble
+								if (j<dataIn.length){value=value+adpcm4(dataIn[j])}	//lo nibble
 								return value
 							}))
 						default:
@@ -208,7 +231,7 @@
 				link.download = `defiance_${filename.split(".")[0]}.pcm`
 				break
 			case 1:	
-				link.download = `defiance_${filename.split(".")[0]}.adpcm`
+				link.download = `defiance_${filename.split(".")[0]}.defy`
 				break
 			case 2: 
 				link.download = `defiance_${filename.split(".")[0]}.defy`
