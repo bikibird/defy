@@ -20,15 +20,31 @@
 							<input type="file" accept="audio">
 						</div>
 					</div>
-					<div class="table-cell"><select class="form-select custom-select" aria-label="format" id="formatSelection" >
-						<option value="0">PCM</option>
-						<option selected value="1">Defy Lossless</option>
-						<option value="2">Defy Lossy 50%</option>
-					</select></div>
-					<div class="table-cell">
-						<input class="btn btn-info" type="button" value="Generate" id="generateButton">
-					</div>
 					
+					<div class="table-cell">
+						<div class="table-row">
+							<div class="table-cell">
+								
+								<form>
+									<select class="form-select custom-select" aria-label="format" id="formatSelection" >
+										<option value="0">PCM</option>
+										<option selected value="1">Defy Lossless</option>
+										<option value="2">Defy Lossy 4-bit</option>
+									</select>
+									<div class="form-group">
+									  <label for=title">Title</label>
+									  <input type="text" class="form-control" id="title"  placeholder="Enter title bar text" maxLength="63" size="63">
+									</div>
+									<div class="form-group">
+										<label for="cover">Cover Art ( __gfx__ block)</label>
+										<textarea class="form-control" id="cover" rows="5" cols=64></textarea>
+									  </div>
+									<button class="btn btn-info" type="button" value="Generate" id="generateButton"><span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" ></span> Generate
+									</button>
+								  </form>
+							</div>	
+						</div>	
+					</div>
 				</div>
 			</div>
 		</div>	
@@ -57,6 +73,8 @@
 <script type="text/javascript">
 	var filename
 	var file
+	var spinner=document.querySelector("#generateButton span")
+	var caption=document.querySelector("#generateButton text")
 	if (!(window.File && window.FileReader && window.FileList && window.Blob))
 	{
 		document.querySelector("#FileDrop #Text").textContent ="Reading files not supported by this browser"
@@ -85,13 +103,13 @@
 				file = files[0]
 				document.querySelector("#FileDrop #Text").textContent = file.name
 				filename=file.name
-				// processFile(file,1) //0== 8-bit unsigned pcm.  1== adpcm
 				
 			}
 		})
 		document.getElementById("generateButton").addEventListener("click", (e) => 
 		{
-			processFile(file,parseInt(document.getElementById("formatSelection").value)) //0== 8-bit unsigned pcm.  1== adpcm
+			spinner.classList.remove("d-none")
+			setTimeout(()=>processFile(file,parseInt(document.getElementById("formatSelection").value)),0)
 		})
 
 	}
@@ -101,17 +119,14 @@
 		var predictedSample = 0		// output of ADPCM predictor 
 		var index = 0 				// index into stepsizeTable
 		var step =7           // quantizer stepsize
-		var indexTable= [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
-		// big thanks @luchak and @packbat for advice on the step table.
-		var stepTable =[7,8,9,10,11,12,13,14,15,17,19,21,23,25,28,31,34,38,42,46,50,55,61,67,74,81,89,98,108,119,131,144,158,174,192,211,232,255] 
-		//[219,241,265,292,321,353,388,427,469,516,568,625,687,756,832,915,1006,1107,1218,1339,1473,1621,1783,1961,2157,2373,2610,2871,3158,3474,3822,4204,4624,5087,5595,6155,6770,7447] 
-		//[63,69,76,84,92,101,111,123,135,148,163,179,197,217,239,263,289,318,350,385,423,465,512,563,619,681,750,824,907,998,1097,1207,1328,1461,1607,1767,1944,2139,2352,2588,2846,3131,3444,3788,4167,4584,5042,5547,6101,6712,7383,8121,8933,9826,10809,11890,13079,14387,15825,17408] 
-		//[1,1,1,1,1,2,2,2,2,2,3,3,3,3,4,4,5,5,6,6,7,7,8,9,10,11,12,13,14,15,17,19,21,23,25,28,31,34,38,42,46,50,55,61,67,74,81,89,98,108,119,131,144,158,174,192,211,232,255] 
-		var cap=255
-		var unsign=128
+		
 		var adpcm4=function(sample)
 		{
-
+			const indexTable= [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
+		// big thanks @luchak and @packbat for advice on the step table.
+			const stepTable =[7,8,9,10,11,12,13,15,16,18,19,21,24,26,28,31,34,38,42,46,50,55,61,67,74,81,89,98,108,119,131,144,158,174,192,211,232,255]
+			const cap=255
+			const unsign=128
 			var delta = Math.trunc((sample*unsign)+unsign) - predictedSample
 			if (delta >= 0) // set sign bit and find absolute value of difference 
 			{
@@ -192,13 +207,21 @@
 				source.start()
 				offlineAudioContext.startRendering().then(function(renderedBuffer)
 				{
+					var data=renderedBuffer.getChannelData(0)
 					switch (format)
 					{
-						case 0:
-							var data= new Uint8Array(renderedBuffer.getChannelData(0).map(value=>Math.trunc(value*128+128)))
+						case 0: //Unsigned 8 bit PCM
+							 data= new Uint8Array(data.map((value,index)=>
+								{
+									Math.trunc(value*128+128)
+								}))
 							break
 						case 1:
-							var data= new Uint8Array(renderedBuffer.getChannelData(0).map(value=>Math.trunc(value*128+128)))
+							var data= new Uint8Array(renderedBuffer.getChannelData(0).map((value, index)=>
+							{
+								Math.trunc(value*128+128)
+							}))
+							data=new Uint8Array([2,...header(),...data])
 							break
 						case 2:
 							var dataIn= renderedBuffer.getChannelData(0)
@@ -209,15 +232,21 @@
 								if (j<dataIn.length){value=value+adpcm4(dataIn[j])}	//lo nibble
 								return value
 							}))
+							data=new Uint8Array([2,...header(),...data])
+							break
 						default:
 							break
 					}
-					
 					save(data,file.name,format)
 				})
 			})	
+		}
+		function header()
+		{
+			return Uint8Array([format, ])
 		}	  
 		fileReader.readAsArrayBuffer(file)
+		spinner.classList.add("d-none")
 	}
 	
 	function save(data,filename,format) 
@@ -236,6 +265,9 @@
 			case 2: 
 				link.download = `defiance_${filename.split(".")[0]}.defy`
 				break	
+			case 3: 
+				link.download = `defiance_${filename.split(".")[0]}.defy`
+				break		
 		}		
 		link.click()
 	}
