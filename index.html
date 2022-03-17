@@ -9,7 +9,6 @@
 </head>
 <body>
 	<h1 class="text-center display-4">Defy: Audio Demake Tool for PICO-8</h1>
-	
 	<div class="table mx-auto">
 		<div class="table-row">
 			<div class="table-cell">
@@ -20,11 +19,9 @@
 							<input type="file" accept="audio">
 						</div>
 					</div>
-					
 					<div class="table-cell">
 						<div class="table-row">
 							<div class="table-cell">
-								
 								<form>
 									<div class="form-group">
 									<label for=formatSelection">Format</label>
@@ -32,6 +29,7 @@
 										<option value="0">PCM</option>
 										<option selected value="1">Defy Lossless</option>
 										<option value="2">Defy Lossy 4-bit</option>
+										<option value="3">Defy Lossy 2-bit</option>
 									</select>
 									</div>
 									<div class="form-group">
@@ -39,12 +37,24 @@
 											<input class="form-check-input" type="checkbox" id="trim" checked>
 											<label class="form-check-label" for="trim">Trim Leading Silence</label>
 										</div>
+										<div class="form-check">
+											<input class="form-check-input" type="checkbox" id="antialiasing" checked>
+											<label class="form-check-label" for="antialiasing">Apply Antialiasing Filter</label>
+										</div>
 									</div>
 									<div id="defyOnly">	
 										<div class="form-group">
 										<label for=title">Title</label>
-										<input type="text" class="form-control" id="title" value="Unknown" placeholder="Enter title bar text" maxLength="51" size="51"></input>
+										<input type="text" class="form-control" id="title" value="Unknown" placeholder="Enter title bar text" maxLength="50" size="50"></input>
 										</div>
+										<div class="form-group">
+											<label for=visualization">Preferred Visualizer</label>
+											<select class="form-select custom-select" aria-label="visualization" id="visualization" >
+												<option selected value="2">Cover Art</option>
+												<option value="3">Bubble</option>
+												<option value="4">Oscilloscope</option>
+											</select>
+											</div>
 										<div class="form-group">
 											<label for="cover">Optional Cover Art ( __gfx__ block)</label>
 											<textarea class="form-control" id="cover" rows="5" cols=64></textarea>
@@ -69,9 +79,10 @@
 							<ul>
 								<li>PCM&mdash; raw unsigned 8-bit PCM, not playable in Defy, but may be useful elsewhere.</li>
 								<li>Defy Lossless&mdash; best sounding audio for the Defy player and binary strings.</li>
-								<li>Defy Lossy&mdash; acceptable audio for the Defy player and 50% compresssed binary strings</li>
-							</ul>	
-						<li>To play Defy files:</li>
+								<li>Defy Lossy 4 Bit&mdash; acceptable audio for the Defy player and 2 to 1 compresssion ratio binary strings.</li>
+								<li>Defy Lossy 2 Bit&mdash; 4 to 1 compresssion ratio binary strings suitable for intellible speech.</li>
+							</ul>
+						<li>The antialiasing filter improves audio downsampling for most browsers including Chrome.</li>	<li>To play Defy files:</li>
 							<ol>
 								<li>Start Pico-8.</li>
 								<li>Enter <kbd>load #defy</kbd> at the command prompt.</li>
@@ -141,20 +152,86 @@
 		})
 
 	}
+	// @luchak's antialiasing filter
+
+	const halfBandCoefs=[
+    0.31818338253226525,
+    -0.10572409218627699,
+    0.06303323470819239,
+    -0.04459522956935277,
+    0.034246199701349206,
+    -0.027574724587867916,
+    0.022887007878042098,
+    -0.019392814851333928,
+    0.01667277922156525,
+    -0.014484717693976842,
+    0.01267888376335044,
+    -0.011160211790922761,
+    0.00986139700760405,
+    -0.00873637163826134,
+    0.007749840633319523,
+    -0.006883093647765105,
+    0.006105497250026827,
+    -0.005419266290437576,
+    0.004800277381909891,
+    -0.004240070555699461,
+    0.0037358551293851516,
+    -0.00328275034230777,
+    0.002873832030999104,
+    -0.0025032541130269037,
+    0.0021682309610695696,
+    -0.0018662433189703346,
+    0.001595392324024004,
+    -0.001352345693372876,
+    0.003713684981166375
+];
+
+function zeroPad(samples, count) {
+    const padded=new Float32Array(samples.length + count*2);
+    for (let i=0; i < samples.length; i++) {
+        padded[i + count] = samples[i];
+    }
+    return padded;
+}
+
+function halfBandFilter(samples, coefs) {
+    const padAmount = 2*coefs.length + 1;
+    const padded = zeroPad(samples, padAmount)
+    const output = new Float32Array(Math.ceil(samples.length/2));
+    for (let i=0; i < output.length; i++) {
+        let base=padAmount + i*2;
+        let filtered = 0.5*padded[base];
+        for (let j=0; j < coefs.length; j++) {
+            const offset = 2*j + 1;
+            filtered += (padded[base-offset] + padded[base+offset])*coefs[j];
+        }
+        output[i]=filtered;
+    }
+    return output;
+}
+
+function processHalfBand(samples) {
+    return halfBandFilter(samples, halfBandCoefs);
+}
+
+
 	function processFile(file, format)
 	{
 		//DVI ADPCM http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pdf adapted for 8-bit unsigned pcm
 		var predictedSample = 0		// output of ADPCM predictor 
 		var index = 0 				// index into stepsizeTable
-		var step =7           // quantizer stepsize
+		var step       // quantizer stepsize
 		
 		var adpcm4=function(sample)
 		{
 			const indexTable= [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
-		// big thanks @luchak and @packbat for advice on the step table.
-			const stepTable =[7,8,9,10,11,12,13,15,16,18,19,21,24,26,28,31,34,38,42,46,50,55,61,67,74,81,89,98,108,119,131,144,158,174,192,211,232,255]
-			const cap =255
-			var delta = sample - predictedSample
+			const stepTable =[7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118,130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767]
+			
+			
+			//[7,8,9,10,11,12,13,15,16,18,19,21,24,26,28,31,34,38,42,46,50,55,61,67,74,81,89,98,108,119,131,144,158,174,192,211,232,255]
+			const hi =32767
+			const lo =-32768
+			var delta = Math.trunc(sample*32768) - predictedSample
 			if (delta >= 0) // set sign bit and find absolute value of difference 
 			{
 				var sign = 0 
@@ -201,10 +278,10 @@
 			}
 			if (sign===8) {delta=-delta}
 			predictedSample=predictedSample+delta
-			if (predictedSample > cap){predictedSample = cap} /* check for overflow */
+			if (predictedSample > hi){predictedSample = hi} /* check for overflow */
 			else 
 			{
-				if (predictedSample < 0){predictedSample = 0}
+				if (predictedSample < lo){predictedSample = lo}
 			}	
 			index =index+ indexTable[newSample]
 			if (index < 0){index = 0} /* check for index underflow */
@@ -215,42 +292,112 @@
 			step = stepTable[index] /* find new quantizer stepsize */
 			return newSample
 		}
+		var adpcm2=function(sample) //
+		{
+			const indexTable= [-1,2,-1,2]
+			const stepTable =[256, 512, 768, 1280, 1792, 2816, 3840, 5888, 7936, 16128, 32512]
+			const hi =32767
+			const lo =-32768
+			var delta = Math.trunc(sample*32768) - predictedSample
+			if (delta >= 0) // set sign bit and find absolute value of difference 
+			{
+				var sign = 0 
+			}
+			else
+			{
+				var sign = 2
+				delta = -delta 
+			}
+			var magnitude=0
+			var mask=4
+			if (delta>=step)
+			{ 
+				magnitude=1
+			}
+			var newSample=sign+magnitude
+			if (magnitude =1) // quantize delta
+			{
+				delta =step
+			}	
+			else
+			{
+				delta=0
+			}
+			if (sign===2) {delta=-delta}
+			predictedSample=predictedSample+delta
+			if (predictedSample > hi){predictedSample = hi} /* check for overflow */
+			else 
+			{
+				if (predictedSample < lo){predictedSample = lo}
+			}	
+			index =index+ indexTable[newSample]
+			if (index < 0){index = 0} /* check for index underflow */
+			else
+			{
+				if (index >=stepTable.length)index = stepTable.length-1 /* check for index overflow */
+			} 
+			step = stepTable[index] /* find new quantizer stepsize */
+			return newSample
+		}
+
 		var audioContext = new (window.AudioContext || window.webkitAudioContext)()
 		var fileReader = new FileReader()
 		fileReader.onload = function(e)
 		{
+			var antialias=document.getElementById("antialiasing").checked
 			audioContext.decodeAudioData(e.target.result).then(function(buffer)
 			{
-				offlineAudioContext= new OfflineAudioContext(
+				if (!antialias)
 				{
-					numberOfChannels: 1,
-					length: 5512.5 * buffer.duration,
-					sampleRate: 22050, 
-				})
-				source = offlineAudioContext.createBufferSource()
-				source.buffer = buffer
-				source.detune.value = 2400  //Raise two octaves.  22050/4 = 5512.5
+					offlineAudioContext= new OfflineAudioContext(
+					{
+						numberOfChannels: 1,
+						length: Math.ceil(5512.5 * buffer.duration),
+						sampleRate: 11025, 
+					})
+					source = offlineAudioContext.createBufferSource()
+					source.buffer = buffer
+					source.detune.value = 1200  //Raise one octaves.  11025/2 = 5512.5
+				}
+				else
+				{
+					offlineAudioContext= new OfflineAudioContext(
+					{
+						numberOfChannels: 1,
+						length: Math.ceil(22050 * buffer.duration),
+						sampleRate: 22050, 
+					})
+					source = offlineAudioContext.createBufferSource()
+					source.buffer = buffer
+				}	
+				
 				source.connect(offlineAudioContext.destination)
 				source.start()
 				offlineAudioContext.startRendering().then(function(renderedBuffer)
 				{
-					var data=new Uint8Array(renderedBuffer.getChannelData(0).map(value=>Math.trunc(value*128+128)))
+					var data=renderedBuffer.getChannelData(0)
+					if (antialias)
+					{
+						data = processHalfBand(processHalfBand(data))
+					}
 					if (document.getElementById("trim").checked)
 					{
 						var i=1
-						var firstValue=data[0]
-						while (data[i]===firstValue)i++
+						var firstValue=Math.trunc(data[0]*256)
+						while (Math.trunc(data[i]*256)===firstValue)i++
 						data=data.subarray(i-1)
 					}
 					switch (format)
 					{
 						case 0: //Unsigned 8 bit PCM
+							data=new Uint8Array(data.map(value=>Math.trunc(value*128+128)))
 							break
-						case 1:
-							data=new Uint8Array([...header(),...data])
+						case 1: //defy PCM
+							data=new Uint8Array([...header(),...data.map(value=>Math.trunc(value*128+128))])
 							break
-						case 2:
+						case 2: //defy 4 bit lossy
 							var dataIn= data
+							step =7
 							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/2+.5)}, (_, i) =>
 							{
 								var value=adpcm4(dataIn[i*2])*16  //hi nibble
@@ -260,6 +407,25 @@
 							}))
 							data=new Uint8Array([...header(),...data])
 							break
+						case 3: //Defy 2 bit lossy
+							var dataIn= data
+							step =256
+							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/4+.5)}, (_, i) =>
+							{
+								var value=adpcm2(dataIn[i*2])*64  //hi 2 bit
+								var j=i*4+1
+								if (j<dataIn.length)
+								{
+									value=value+adpcm2(dataIn[j])*16
+									j++
+									value=value+adpcm2(dataIn[j])*4
+									j++
+									value=value+adpcm2(dataIn[j])
+								}	
+								return value
+							}))
+							data=new Uint8Array([...header(),...data])
+							break	
 						default:
 							break
 					}
@@ -270,9 +436,9 @@
 		function header()
 		{
 			var identifier=new TextEncoder().encode("defydefy    ")
-			var title=new TextEncoder().encode(document.getElementById("title").value.padEnd(51, " "))
+			var title=new TextEncoder().encode(document.getElementById("title").value.padEnd(50, " "))
 			var cover=new TextEncoder().encode(document.getElementById("cover").value)
-			
+			var visualizer =document.getElementById("visualization").value
 			if (cover.length===0)
 			{
 				cover =new TextEncoder().encode(
@@ -404,61 +570,61 @@ d554451111c31315d51311113313553d43ad33335333311033ccb3b33c111111c111111d3bbbcc35
 1553331111c333515113103c555113335dd3113ca4994f5111033bbc1110111661111111cbc3310114494a4ac533dd53533153553313305551d3331c11353331
 3313333111c35555011033db15333355d45313314949594a35356bc011111166661110111bc6353564a4444413113d4d55311553dc53111153533c1101333113
 1133c351113311133b1151d3551511d3445353c34a55595d113d54531111116dd61111111545b311c49544a53c333545553133155315013b3121331113c33311`)
-		}
-		var index=0
-		var hiNibble
-		var coverData =new Uint8Array(Array.from({ length: 8192}, (_, i) =>
-		{
-			hiNibble=false
-			value=0
-			while (true)
+			}
+			var index=0
+			var hiNibble
+			var coverData =new Uint8Array(Array.from({ length: 8192}, (_, i) =>
 			{
-				if (index>=cover.length) return value
-				var character=cover[index]
-				
-				if (character>=48 && character<=57)
+				hiNibble=false
+				value=0
+				while (true)
 				{
-					if (hiNibble)
+					if (index>=cover.length) return value
+					var character=cover[index]
+					
+					if (character>=48 && character<=57)
 					{
-						value=value+(character-48)*16
-						index++
-						return value
-					}	
-					else
-					{
-						value=character-48
-						hiNibble= !hiNibble
-						
-						
-					}
-				}
-				else
-				{
-					if (character>=97 && character<=102)
-					{
-
 						if (hiNibble)
 						{
-							value=value+(character-87)*16
+							value=value+(character-48)*16
 							index++
 							return value
-							
 						}	
 						else
 						{
-							value=character-87
+							value=character-48
 							hiNibble= !hiNibble
 							
 							
 						}
 					}
-				}
-				index++
-			}
+					else
+					{
+						if (character>=97 && character<=102)
+						{
 
-		}))
+							if (hiNibble)
+							{
+								value=value+(character-87)*16
+								index++
+								return value
+								
+							}	
+							else
+							{
+								value=character-87
+								hiNibble= !hiNibble
+								
+								
+							}
+						}
+					}
+					index++
+				}
+
+			}))
 			
-			return new Uint8Array([...identifier,format,...title,...coverData])
+			return new Uint8Array([...identifier,format,visualizer,...title,...coverData])
 		}	  
 		fileReader.readAsArrayBuffer(file)
 		spinner.classList.add("d-none")
@@ -475,11 +641,14 @@ d554451111c31315d51311113313553d43ad33335333311033ccb3b33c111111c111111d3bbbcc35
 				link.download = `defiance_${filename.split(".")[0]}.pcm`
 				break
 			case 1:	
-				link.download = `defiance_${filename.split(".")[0]}.defy`
+				link.download = `defiance_${filename.split(".")[0]}_lossless.defy`
 				break
 			case 2: 
-				link.download = `defiance_${filename.split(".")[0]}.defy`
-				break	
+				link.download = `defiance_${filename.split(".")[0]}_lossy4.defy`
+				break
+			case 3: 
+				link.download = `defiance_${filename.split(".")[0]}_lossy2.defy`
+				break			
 		}		
 		link.click()
 	}
