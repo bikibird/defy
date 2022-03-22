@@ -29,17 +29,18 @@
 										<option value="0">PCM</option>
 										<option selected value="1">Defy Lossless</option>
 										<option value="2">Defy Lossy 4-bit</option>
-										<option value="3">Defy Lossy 2-bit</option>
+										<option value="3">Defy Lossy 2.6-bit</option>
+										<option value="4">Defy Lossy 2-bit</option>
 									</select>
 									</div>
 									<div class="form-group">
-										<div class="form-check">
+										<div class="form-check d-inline-block">
 											<input class="form-check-input" type="checkbox" id="trim" checked>
-											<label class="form-check-label" for="trim">Trim Leading Silence</label>
+											<label class="form-check-label" for="trim">Trim Leading Silence&nbsp;&nbsp;</label>
 										</div>
-										<div class="form-check">
+										<div class="form-check d-inline-block">
 											<input class="form-check-input" type="checkbox" id="antialiasing" checked>
-											<label class="form-check-label" for="antialiasing">Apply Antialiasing Filter</label>
+											<label class="form-check-label " for="antialiasing">Apply Antialiasing Filter </label>
 										</div>
 									</div>
 									<div id="defyOnly">	
@@ -51,8 +52,8 @@
 											<label for=visualization">Preferred Visualizer</label>
 											<select class="form-select custom-select" aria-label="visualization" id="visualization" >
 												<option selected value="2">Cover Art</option>
-												<option value="3">Bubble</option>
-												<option value="4">Oscilloscope</option>
+												<option value="3">Oscilloscope</option>
+												<option value="4">Bubble</option>
 											</select>
 											</div>
 										<div class="form-group">
@@ -221,7 +222,56 @@ function processHalfBand(samples) {
 		var predictedSample = 0		// output of ADPCM predictor 
 		var index = 0 				// index into stepsizeTable
 		var step       // quantizer stepsize
-		
+		var direction=0  //ADPCM1 0 positive 1 negative
+		var adpcm=function(sample,bits)
+		{
+			const indexTable= [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
+			const stepTable =[7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118,130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767]
+			const hi =32767
+			const lo =-32768
+			var delta = Math.trunc(sample*32768) - predictedSample
+			if (delta >= 0) // set sign bit and find absolute value of difference 
+			{
+				var sign = 0 
+			}
+			else
+			{
+				var sign = 8 
+				delta = -delta 
+			}
+			var qDelta=0
+			var tempStep=step
+			var magnitude=0
+			var mask=2**(bits-2)  //4, 2, 1 === 4 bit, 3 bit, 2 bit
+			for (i = 0; i < bits-1 ; i++ ) /* quantize difference */
+			{
+				if (delta>=tempStep)
+				{ 
+					magnitude=magnitude+mask /* perform division ... */
+					delta -= tempStep /* ... through repeated subtraction */
+					qDelta += tempStep
+				}
+				tempStep=Math.trunc(tempStep/2)
+				mask=mask/2
+			}
+			var newSample=sign/(2**(4-bits))+magnitude
+			var lookup=magnitude*(2**(4-bits)) +sign
+			if (sign===8) {qDelta=-qDelta}
+			predictedSample=predictedSample+qDelta
+			if (predictedSample > hi){predictedSample = hi} /* check for overflow */
+			else 
+			{
+				if (predictedSample < lo){predictedSample = lo}
+			}	
+			index =index+ indexTable[lookup]
+			if (index < 0){index = 0} /* check for index underflow */
+			else
+			{
+				if (index >=stepTable.length)index = stepTable.length-1 /* check for index overflow */
+			} 
+			step = stepTable[index] /* find new quantizer stepsize */
+			return newSample
+		}
 		var adpcm4=function(sample)
 		{
 			const indexTable= [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
@@ -292,10 +342,12 @@ function processHalfBand(samples) {
 			step = stepTable[index] /* find new quantizer stepsize */
 			return newSample
 		}
-		var adpcm2=function(sample) //
+		var adpcm2=function(sample) //adapted from https://github.com/phlash/adpcm
 		{
 			const indexTable= [-1,2,-1,2]
-			const stepTable =[256, 512, 768, 1280, 1792, 2816, 3840, 5888, 7936, 16128, 32512]
+			const stepTable =[251,308,377,462,566,693,849,1040,1274,1561,1912,2342,2869,3515,4306,5275,6462,7916,9697,11878,14551,17825,21836,26749,32767]
+			
+			//[249,262,275,288,303,318,334,351,368,387,406,426,447,470,493,518,544,571,600,630,661,694,729,765,804,844,886,930,977,1026,1077,1131,1187,1247,1309,1374,1443,1515,1591,1671,1754,1842,1934,2031,2132,2239,2351,2468,2592,2721,2857,3000,3150,3308,3473,3647,3829,4021,4222,4433,4654,4887,5131,5388,5657,5940,6237,6549,6877,7221,7582,7961,8359,8777,9215,9676,10160,10668,11201,11761,12350,12967,13615,14296,15011,15761,16550,17377,18246,19158,20116,21122,22178,23287,24451,25674,26957,28305,29721,31207,32767]
 			const hi =32767
 			const lo =-32768
 			var delta = Math.trunc(sample*32768) - predictedSample
@@ -309,22 +361,21 @@ function processHalfBand(samples) {
 				delta = -delta 
 			}
 			var magnitude=0
-			var mask=4
-			if (delta>=step)
+			if (delta>step)
 			{ 
 				magnitude=1
 			}
 			var newSample=sign+magnitude
-			if (magnitude =1) // quantize delta
+			if (magnitude ===1) // quantize delta
 			{
-				delta =step
+				delta =step*1.5
 			}	
 			else
 			{
-				delta=0
+				delta=step*.5
 			}
 			if (sign===2) {delta=-delta}
-			predictedSample=predictedSample+delta
+			predictedSample=Math.trunc(predictedSample+delta)
 			if (predictedSample > hi){predictedSample = hi} /* check for overflow */
 			else 
 			{
@@ -339,25 +390,72 @@ function processHalfBand(samples) {
 			step = stepTable[index] /* find new quantizer stepsize */
 			return newSample
 		}
-
+		var adpcm1=function(sample)
+		{
+			const stepTable =[253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767]
+			const hi =32767
+			const lo =-32768
+			var delta = Math.trunc(sample*32768) - predictedSample
+			if (delta >= 0) // set sign bit and find absolute value of difference 
+			{
+				var newSample = 0 
+			}
+			else
+			{
+				var newSample = 1
+				delta = -delta 
+			}
+			if ( newSample===1) {delta=-step}
+			else {delta=step}
+			predictedSample=Math.trunc(predictedSample+delta)
+			if (predictedSample > hi){predictedSample = hi} /* check for overflow */
+			else 
+			{
+				if (predictedSample < lo){predictedSample = lo}
+			}	
+			if (newSample===direction)
+			{
+				index=index+1
+			}
+			else
+			{
+				direction=newSample
+				index=0
+			}
+			//index =index+ indexTable[newSample]
+			if (index < 0){index = 0} /* check for index underflow */
+			else
+			{
+				if (index >=stepTable.length)index = stepTable.length-1 /* check for index overflow */
+			} 
+			step = stepTable[index] /* find new quantizer stepsize */
+			return newSample
+		}
 		var audioContext = new (window.AudioContext || window.webkitAudioContext)()
 		var fileReader = new FileReader()
 		fileReader.onload = function(e)
 		{
 			var antialias=document.getElementById("antialiasing").checked
+			var source	
 			audioContext.decodeAudioData(e.target.result).then(function(buffer)
 			{
 				if (!antialias)
 				{
-					offlineAudioContext= new OfflineAudioContext(
+					var offlineAudioContext= new OfflineAudioContext(
 					{
 						numberOfChannels: 1,
 						length: Math.ceil(5512.5 * buffer.duration),
 						sampleRate: 11025, 
 					})
+					/*var telephoneFilter = offlineAudioContext.createBiquadFilter()
+					telephoneFilter.type="bandpass"
+					telephoneFilter.frequency.value=(3400-300)/2
+					telephoneFilter.Q.value=Math.sqrt(300*3400)/(3400-300)*/
 					source = offlineAudioContext.createBufferSource()
 					source.buffer = buffer
-					source.detune.value = 1200  //Raise one octaves.  11025/2 = 5512.5
+					source.detune.value = 1200  //Raise one octave.  11025/2 = 5512.5
+				//	source.connect(telephoneFilter).connect(offlineAudioContext.destination)
+					source.connect(offlineAudioContext.destination)
 				}
 				else
 				{
@@ -367,11 +465,15 @@ function processHalfBand(samples) {
 						length: Math.ceil(22050 * buffer.duration),
 						sampleRate: 22050, 
 					})
+					/*var telephoneFilter = offlineAudioContext.createBiquadFilter()
+					telephoneFilter.type="bandpass"
+					telephoneFilter.frequency.value=(3400-300)/2
+					telephoneFilter.Q.value=Math.sqrt(300*3400)/(3400-300)*/
 					source = offlineAudioContext.createBufferSource()
 					source.buffer = buffer
+				//	source.connect(telephoneFilter).connect(offlineAudioContext.destination)
+					source.connect(offlineAudioContext.destination)
 				}	
-				
-				source.connect(offlineAudioContext.destination)
 				source.start()
 				offlineAudioContext.startRendering().then(function(renderedBuffer)
 				{
@@ -400,34 +502,54 @@ function processHalfBand(samples) {
 							step =7
 							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/2+.5)}, (_, i) =>
 							{
-								var value=adpcm4(dataIn[i*2])*16  //hi nibble
+								var value=adpcm(dataIn[i*2],4)*16  //hi nibble
 								var j=i*2+1
-								if (j<dataIn.length){value=value+adpcm4(dataIn[j])}	//lo nibble
+								if (j<dataIn.length){value=value+adpcm(dataIn[j],4)}	//lo nibble
 								return value
 							}))
 							data=new Uint8Array([...header(),...data])
 							break
-						case 3: //Defy 2 bit lossy
+						case 3: //Defy 2.6 bit lossy
 							var dataIn= data
-							step =256
+							step =7
 							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/4+.5)}, (_, i) =>
 							{
-								var value=adpcm2(dataIn[i*2])*64  //hi 2 bit
+								var value=adpcm(dataIn[i*2],3)*32  //hi 2 bit
 								var j=i*4+1
 								if (j<dataIn.length)
 								{
-									value=value+adpcm2(dataIn[j])*16
+									value=value+adpcm(dataIn[j],3)*4
 									j++
-									value=value+adpcm2(dataIn[j])*4
+									value=value+adpcm(dataIn[j],2)
 									j++
-									value=value+adpcm2(dataIn[j])
+									
 								}	
 								return value
 							}))
 							data=new Uint8Array([...header(),...data])
 							break	
+						case 4: //Defy 2 bit lossy
+							var dataIn= data
+							step =251
+							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/4+.5)}, (_, i) =>
+							{
+								var value=adpcm(dataIn[i*2],2)*64  //hi 2 bit
+								var j=i*4+1
+								if (j<dataIn.length)
+								{
+									value=value+adpcm(dataIn[j],2)*16
+									j++
+									value=value+adpcm(dataIn[j],2)*4
+									j++
+									value=value+adpcm(dataIn[j],2)
+								}	
+								return value
+							}))
+							data=new Uint8Array([...header(),...data])
+							break
 						default:
 							break
+
 					}
 					save(data,file.name,format)
 				})
@@ -647,8 +769,14 @@ d554451111c31315d51311113313553d43ad33335333311033ccb3b33c111111c111111d3bbbcc35
 				link.download = `defiance_${filename.split(".")[0]}_lossy4.defy`
 				break
 			case 3: 
+				link.download = `defiance_${filename.split(".")[0]}_lossy3.defy`
+				break	
+			case 4: 
 				link.download = `defiance_${filename.split(".")[0]}_lossy2.defy`
-				break			
+				break	
+			case 4: 
+				link.download = `defiance_${filename.split(".")[0]}_lossy1.defy`
+				break					
 		}		
 		link.click()
 	}

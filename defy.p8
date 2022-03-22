@@ -11,7 +11,7 @@ black,dark_blue,dark_purple,dark_green,brown,dark_gray,light_gray,white,red,oran
 function header()
 	local title="Defy Player"
 	mode=@(buffer+12)  --playback mode 1 (pcm) or 2 (adpcm)
-	visualizer=@(buffer+13)  --playback mode 1 (pcm) or 2 (adpcm)
+	visualizer=@(buffer+13)  
 	if mode ==1 then
 		title..=" (Lossless) "..chr(peek(buffer+14,50))
 	else
@@ -20,12 +20,9 @@ function header()
 	if (stat(102)==0) extcmd("set_title",title)
 	memcpy( 0x0000, buffer+64, 8192 )
 	ejected=false
-	new_sample, ad_index = 0, 0
-	if mode == 2 then
-		step = 7
-	elseif mode==3 then 
-		step = 256
-	end	
+	direction,new_sample, ad_index = 0, 0,0
+	step=7
+
 end
 function play_pcm()
 	if not pause then
@@ -71,7 +68,8 @@ function play_adpcm4()
 						printh(escape_binary_str(audio_string),"@clip")
 					end	
 				end
-				poke(audio_buffer+i*2,adpcm4((sample&0xf0)>>>4),adpcm4(sample&0x0f))
+				
+				poke(audio_buffer+i*2,adpcm((sample&0xf0)>>>4,4),adpcm(sample&0x0f,4))
 			end
 			if (not ejected) serial(0x808,audio_buffer,receipt*2)	
 		end	
@@ -86,6 +84,7 @@ function play_adpcm2()
 		local request
 		local sample
 		local defy_defy
+		local samples
 		while stat(108)<1536 and stat(120) do
 			receipt = serial(0x800, buffer, 128)
 			defy_defy=chr(peek(buffer,12))
@@ -104,7 +103,75 @@ function play_adpcm2()
 						printh(escape_binary_str(audio_string),"@clip")
 					end	
 				end
-				poke(audio_buffer+i*4, adpcm2((sample&0xc0)>>>6), adpcm2((sample&0x30)>>>4), adpcm2((sample&0x0c)>>>2),	adpcm2(sample&0x03))
+				poke(audio_buffer+i*4, adpcm((sample>>>6)&0x03,2), adpcm((sample>>>4)&0x03,2), adpcm((sample>>>2)&0x03,2),	adpcm(sample&0x03,2))
+			end
+			if (not ejected) serial(0x808,audio_buffer,receipt*4)	
+		end	
+	end	
+	if recording and not stat(120) and #audio_string > 0 then
+		recording=false
+		printh(escape_binary_str(audio_string),"@clip")
+	end
+end
+function play_adpcm3()
+	if not pause then
+		local request
+		local sample
+		local defy_defy
+		local samples
+		while stat(108)<1536 and stat(120) do
+			receipt = serial(0x800, buffer, 170)
+			defy_defy=chr(peek(buffer,12))
+			if (defy_defy=="defydefy    ") then
+				serial(0x800,buffer+170,8256-170)
+				header()
+				return
+			end
+			for i=0,receipt-1 do
+				sample=@(buffer+i)
+				if recording then
+					if #audio_string < 32000 then
+						audio_string..=chr(sample)
+					else
+						recording=false
+						printh(escape_binary_str(audio_string),"@clip")
+					end	
+				end
+				poke(audio_buffer+i*3, adpcm((sample>>>5)&0x07,3), adpcm((sample>>>2)&0x07,3), adpcm(sample&0x03,2))
+			end
+			if (not ejected) serial(0x808,audio_buffer,receipt*4)	
+		end	
+	end	
+	if recording and not stat(120) and #audio_string > 0 then
+		recording=false
+		printh(escape_binary_str(audio_string),"@clip")
+	end
+end
+function play_adpcm1()
+	if not pause then
+		local request
+		local sample
+		local defy_defy
+		local samples
+		while stat(108)<1536 and stat(120) do
+			receipt = serial(0x800, buffer, 64)
+			defy_defy=chr(peek(buffer,12))
+			if (defy_defy=="defydefy    ") then
+				serial(0x800,buffer+64,8256-64)
+				header()
+				return
+			end
+			for i=0,receipt-1 do
+				sample=@(buffer+i)
+				if recording then
+					if #audio_string < 32000 then
+						audio_string..=chr(sample)
+					else
+						recording=false
+						printh(escape_binary_str(audio_string),"@clip")
+					end	
+				end
+				poke(audio_buffer+i*8, adpcm1((sample>>>7)&0x01), adpcm1((sample>>>6)&0x01), adpcm1((sample>>>5)&0x01),adpcm1((sample>>>4)&0x01), adpcm1((sample>>>3)&0x01), adpcm2((sample>>>2)&0x01),adpcm1(sample&0x01))
 			end
 			if (not ejected) serial(0x808,audio_buffer,receipt*4)	
 		end	
@@ -135,6 +202,7 @@ function escape_binary_str(s)  --https://www.lexaloffle.com/bbs/?tid=38692
 	end
 	return out
 end
+
 function adpcm4(sample) --http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pdf, but adapted for 8 bit unsigned
 	local index_table = {[0]=-1,-1,-1,-1,2,4,6,8,-1,-1,-1,-1,2,4,6,8}
 	-- thanks @luchak and @packbat for the sound advice.
@@ -166,11 +234,62 @@ function adpcm4(sample) --http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pd
 	step = step_table[ad_index]
 	return new_sample\256+128
 end
-function adpcm2(sample) --https://github.com/phlash/adpcm
-	local index_table = {[0]=-1,2,-1,2}
-	local step_table ={256, 512, 768, 1280, 1792, 2816, 3840, 5888, 7936, 16128, 32512}
+
+function adpcm(sample,bits) --http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pdf, but adapted for 8 bit unsigned
+	local index_table = {[0]=-1,-1,-1,-1,2,4,6,8,-1,-1,-1,-1,2,4,6,8}
+	-- thanks @luchak and @packbat for the sound advice.
+	local step_table ={7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118,130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767}
 	
 	local delta=0
+	local temp_step =step
+	local sign = sample &(1<<(bits-1)) --hi bit of sample convert to 4 bit
+	local magnitude =(sample & (sign-1))<<(4-bits)  -- convert sample to 4 bit
+	sign <<=(4-bits) -- convert sign to 4 bit 8==negative 0== positive
+	local mask = 4
+	for i=1,3 do
+		if (magnitude & mask >0) then
+			delta+=temp_step
+		end
+		mask >>>= 1
+		temp_step >>>= 1	
+	end
+	if sign> 0 then  -- negative magnitude
+		if new_sample < -32768+delta then 
+			new_sample = -32768
+		else	
+			new_sample-=delta
+		end
+	else  -- positive magnitude
+		if new_sample >32767-delta then
+			new_sample =32767
+		else
+			new_sample +=delta
+		end
+	end	
+	if (sign+magnitude> 15) then
+		cls()
+		?sign
+		?magnitude
+		stop()
+	end
+	ad_index += index_table[sign+magnitude]
+	if ad_index < 1 then 
+		ad_index = 1
+	elseif (ad_index > #step_table) then
+		ad_index = #step_table
+	end	
+	step = step_table[ad_index]
+	return new_sample\256+128
+end
+function adpcm2(sample) 
+	local index_table = {[0]=-1,2,-1,2}
+	local step_table ={251,308,377,462,566,693,849,1040,1274,1561,1912,2342,2869,3515,4306,5275,6462,7916,9697,11878,14551,17825,21836,26749,32767}
+	--{253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767}
+	--{256, 512, 768, 1280, 1792, 2816, 3840, 5888, 7936, 16128, 32512}
+	--{249,262,275,288,303,318,334,351,368,387,406,426,447,470,493,518,544,571,600,630,661,694,729,765,804,844,886,930,977,1026,1077,1131,1187,1247,1309,1374,1443,1515,1591,1671,1754,1842,1934,2031,2132,2239,2351,2468,2592,2721,2857,3000,3150,3308,3473,3647,3829,4021,4222,4433,4654,4887,5131,5388,5657,5940,6237,6549,6877,7221,7582,7961,8359,8777,9215,9676,10160,10668,11201,11761,12350,12967,13615,14296,15011,15761,16550,17377,18246,19158,20116,21122,22178,23287,24451,25674,26957,28305,29721,31207,32767}
+	--{7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118,130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767}
+	--{256, 512, 768, 1280, 1792, 2816, 3840, 5888, 7936, 16128, 32512}
+	local delta=step >>> 1
 	if (sample & 1>0) delta += step
 	if sample> 1 then  -- negative magnitude
 		if new_sample < -32768+delta then 
@@ -192,7 +311,33 @@ function adpcm2(sample) --https://github.com/phlash/adpcm
 		ad_index = #step_table
 	end	
 	step = step_table[ad_index]
-	return new_sample\256+128
+	return new_sample\256 +128--((new_sample\1024)<<2)+128
+end
+function adpcm1(sample) 
+	local step_table ={251,308,377,462,566,693,849,1040,1274,1561,1912,2342,2869,3515,4306,5275,6462,7916,9697,11878,14551,17825,21836,26749,32767}
+	if sample == 1 then
+		if new_sample < -32768+step then 
+			new_sample = -32768
+		else	
+			new_sample-=step
+		end
+	else
+		if new_sample >32767-step then
+			new_sample =32767
+		else
+			new_sample +=step
+		end
+	end	
+	if (new_sample==direction) then
+		ad_index=ad_index+1
+	else
+		direction=new_sample
+		ad_index=1
+	if (ad_index > #step_table) ad_index = #step_table
+	end	
+	step = step_table[ad_index]
+	return new_sample\256 +128
+
 end
 function update_audio_string(receipt)
 	if #audio_string < 32000 then
@@ -276,7 +421,7 @@ function _init()
 	new_sample,ad_index = 0,0
 	step = 7
 	visualizer=1
-	modes={{playback=play_pcm,buffer=buffer},{playback=play_adpcm4,buffer=audio_buffer},{playback=play_adpcm2,buffer=audio_buffer}}
+	modes={{playback=play_pcm,buffer=buffer},{playback=play_adpcm4,buffer=audio_buffer},{playback=play_adpcm3,buffer=audio_buffer},{playback=play_adpcm2,buffer=audio_buffer}}
 end	
 _update=function()
 	if ( btnp(fire1) ) then
