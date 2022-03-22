@@ -247,7 +247,7 @@ function adpcm(sample,bits) --http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPC
 	sign <<=(4-bits) -- convert sign to 4 bit 8==negative 0== positive
 	local mask = 4
 	for i=1,3 do
-		if (magnitude & mask >0) then
+		if (magnitude>0) then
 			delta+=temp_step
 		end
 		mask >>>= 1
@@ -266,12 +266,6 @@ function adpcm(sample,bits) --http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPC
 			new_sample +=delta
 		end
 	end	
-	if (sign+magnitude> 15) then
-		cls()
-		?sign
-		?magnitude
-		stop()
-	end
 	ad_index += index_table[sign+magnitude]
 	if ad_index < 1 then 
 		ad_index = 1

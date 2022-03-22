@@ -90,7 +90,7 @@
 								<li>Then enter <kbd>run</kbd>.</li>
 								<li>Drag and drop the defy file onto PIC0-8.</li>
 							</ol>
-						<li><a href="https://www.lexaloffle.com/bbs/?tid=46407&tkey=nP5Fh9LgqfwEXXBvJaGw">Binary audio strings may also be created for playback in your own carts.</a></li>	
+						<li><a href="https://www.lexaloffle.com/bbs/?tid=46407&tkey=nP5Fh9LgqfwEXXBvJaGw">The Defy player also records binary audio strings for playback in your own carts.</a></li>	
 
 					</ol>
 				</div></div></div>
@@ -512,17 +512,19 @@ function processHalfBand(samples) {
 						case 3: //Defy 2.6 bit lossy
 							var dataIn= data
 							step =7
-							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/4+.5)}, (_, i) =>
+							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/3+.5)}, (_, i) =>
 							{
-								var value=adpcm(dataIn[i*2],3)*32  //hi 2 bit
-								var j=i*4+1
+								var value=adpcm(dataIn[i*3],3)*32  //hi 2 bit
+								var j=i*3+1
 								if (j<dataIn.length)
 								{
 									value=value+adpcm(dataIn[j],3)*4
 									j++
-									value=value+adpcm(dataIn[j],2)
-									j++
-									
+									if (j<dataIn.length)
+									{
+										value=value+adpcm(dataIn[j],2)
+										j++
+									}
 								}	
 								return value
 							}))
@@ -533,15 +535,22 @@ function processHalfBand(samples) {
 							step =251
 							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/4+.5)}, (_, i) =>
 							{
-								var value=adpcm(dataIn[i*2],2)*64  //hi 2 bit
+								var value=adpcm(dataIn[i*4],2)*64  //hi 2 bit
 								var j=i*4+1
 								if (j<dataIn.length)
 								{
 									value=value+adpcm(dataIn[j],2)*16
 									j++
-									value=value+adpcm(dataIn[j],2)*4
-									j++
-									value=value+adpcm(dataIn[j],2)
+									if (j<dataIn.length)
+									{
+										value=value+adpcm(dataIn[j],2)*4
+										j++
+										if(j<dataIn.length)
+										{
+											value=value+adpcm(dataIn[j],2)
+											j++
+										}
+									}
 								}	
 								return value
 							}))
