@@ -26,11 +26,12 @@
 									<div class="form-group">
 									<label for=formatSelection">Format</label>
 									<select class="form-select custom-select" aria-label="format" id="formatSelection" >
-										<option value="0">PCM</option>
-										<option selected value="1">Defy Lossless</option>
-										<option value="2">Defy Lossy 4-bit</option>
-										<option value="3">Defy Lossy 2.6-bit</option>
-										<option value="4">Defy Lossy 2-bit</option>
+										<option value="0">Unsigned 8-bit PCM</option>
+										<option selected value="1">Defy 8-bit</option>
+										<option value="2">Defy 4-bit</option>
+										<option value="3">Defy 2.6-bit</option>
+										<option value="4">Defy 2-bit</option>
+										<option value="5">Defy 1-bit</option>
 									</select>
 									</div>
 									<div class="form-group">
@@ -79,9 +80,11 @@
 						<li>Select output format</li>
 							<ul>
 								<li>PCM&mdash; raw unsigned 8-bit PCM, not playable in Defy, but may be useful elsewhere.</li>
-								<li>Defy Lossless&mdash; best sounding audio for the Defy player and binary strings.</li>
-								<li>Defy Lossy 4 Bit&mdash; acceptable audio for the Defy player and 2 to 1 compresssion ratio binary strings.</li>
-								<li>Defy Lossy 2 Bit&mdash; 4 to 1 compresssion ratio binary strings suitable for intellible speech.</li>
+								<li>Defy 8-Bit&mdash; best sounding audio for the Defy player and binary strings.</li>
+								<li>Defy 4-Bit&mdash; acceptable audio for the Defy player and 2 to 1 compresssion compared to 8-bit.</li>
+								<li>Defy 2.6-Bit&mdash; 3 to 1 compresssion compared to 8-bit, lower quality</li>
+								<li>Defy 2-Bit&mdash; 4 to 1 compresssion compared to 8-bit suitable for intelligible speech.</li>
+								<li>Defy 1-Bit&mdash; 8 to 1 compresssion compared to 8-bit, lowest quality.</li>
 							</ul>
 						<li>The antialiasing filter improves audio downsampling for most browsers including Chrome.</li>	<li>To play Defy files:</li>
 							<ol>
@@ -90,7 +93,7 @@
 								<li>Then enter <kbd>run</kbd>.</li>
 								<li>Drag and drop the defy file onto PIC0-8.</li>
 							</ol>
-						<li><a href="https://www.lexaloffle.com/bbs/?tid=46407&tkey=nP5Fh9LgqfwEXXBvJaGw">The Defy player also records binary audio strings for playback in your own carts.</a></li>	
+						<li><a href="https://www.lexaloffle.com/bbs/?tid=47089">The Defy player also records binary audio strings for playback in your own carts.</a></li>	
 
 					</ol>
 				</div></div></div>
@@ -218,10 +221,11 @@ function processHalfBand(samples) {
 
 	function processFile(file, format)
 	{
-		//DVI ADPCM http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pdf adapted for 8-bit unsigned pcm
+		//DVI ADPCM http://www.cs.columbia.edu/~hgs/audio/dvi/IMA_ADPCM.pdf adapted for 4, 2.6, 2, and 1 bit.
 		var predictedSample = 0		// output of ADPCM predictor 
 		var index = 0 				// index into stepsizeTable
 		var step       // quantizer stepsize
+		var direction=0
 		var adpcm=function(sample,bits)
 		{
 			const indexTable= [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
@@ -241,27 +245,46 @@ function processHalfBand(samples) {
 			var qDelta=0
 			var tempStep=step
 			var magnitude=0
-			var mask=2**(bits-2)  //4, 2, 1 === 4 bit, 3 bit, 2 bit
-			for (i = 0; i < bits-1 ; i++ ) /* calculate magnitude and quantize delta */
+			if (bits>1)
 			{
-				if (delta>=tempStep)
-				{ 
-					magnitude=magnitude+mask //set bits according to mask 
-					delta -= tempStep
-					qDelta += tempStep 
+				var mask=2**(bits-2)  //4, 2, 1 === 4 bit, 3 bit, 2 bit
+				for (i = 0; i < bits-1 ; i++ ) /* calculate magnitude and quantize delta */
+				{
+					if (delta>=tempStep)
+					{ 
+						magnitude=magnitude+mask //set bits according to mask 
+						delta -= tempStep
+						qDelta += tempStep 
+					}
+					tempStep=Math.trunc(tempStep/2)
+					mask=mask/2
 				}
-				tempStep=Math.trunc(tempStep/2)
-				mask=mask/2
+				var newSample=sign/(2**(4-bits))+magnitude
+				index =index+ indexTable[magnitude*(2**(4-bits)) +sign]
+				if (sign>0) {qDelta=-qDelta}
 			}
-			var newSample=sign/(2**(4-bits))+magnitude
-			if (sign===8) {qDelta=-qDelta}
+			else  //1-bit
+			{
+				qDelta=step
+				var newSample=sign/8
+				if (newSample===1){qDelta=-qDelta}
+				if (direction==newSample)
+				{
+					index +=1
+				}
+				else 
+				{
+					direction=newSample
+					index -=1
+				}
+			}	
 			predictedSample=predictedSample+qDelta
 			if (predictedSample > hi){predictedSample = hi} /* check for overflow */
 			else 
 			{
 				if (predictedSample < lo){predictedSample = lo}
 			}	
-			index =index+ indexTable[magnitude*(2**(4-bits)) +sign]
+			
 			if (index < 0){index = 0} /* check for index underflow */
 			else
 			{
@@ -327,7 +350,7 @@ function processHalfBand(samples) {
 						case 1: //defy PCM
 							data=new Uint8Array([...header(),...data.map(value=>Math.trunc(value*128+128))])
 							break
-						case 2: //defy 4 bit lossy
+						case 2: //defy 4 bit
 							var dataIn= data
 							step =7
 							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/2+.5)}, (_, i) =>
@@ -339,7 +362,7 @@ function processHalfBand(samples) {
 							}))
 							data=new Uint8Array([...header(),...data])
 							break
-						case 3: //Defy 2.6 bit lossy
+						case 3: //Defy 2.6 bit 
 							var dataIn= data
 							step =7
 							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/3+.5)}, (_, i) =>
@@ -360,9 +383,9 @@ function processHalfBand(samples) {
 							}))
 							data=new Uint8Array([...header(),...data])
 							break	
-						case 4: //Defy 2 bit lossy
+						case 4: //Defy 2 bit 
 							var dataIn= data
-							step =251
+							step =7
 							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/4+.5)}, (_, i) =>
 							{
 								var value=adpcm(dataIn[i*4],2)*64  //hi 2 bit
@@ -386,6 +409,25 @@ function processHalfBand(samples) {
 							}))
 							data=new Uint8Array([...header(),...data])
 							break
+						case 5: //Defy 1 bit 
+							var dataIn= data
+							var value=0
+							step =7
+							var data=new Uint8Array(Array.from({ length: Math.floor(dataIn.length/8+.5)}, (_, i) =>
+							{
+								var j=i*8
+								var value=0
+								var shift=128
+								for (let j = i*8; j <i*8+8; j++)
+								{
+									if (j>dataIn.length){break}
+									value=value+adpcm(dataIn[j],1)*shift
+									shift=shift/2
+								}
+								return value
+							}))
+							data=new Uint8Array([...header(),...data])
+							break	
 						default:
 							break
 
@@ -396,8 +438,9 @@ function processHalfBand(samples) {
 		}
 		function header()
 		{
+
 			var identifier=new TextEncoder().encode("defydefy    ")
-			var title=new TextEncoder().encode(document.getElementById("title").value.padEnd(50, " "))
+			var title=new TextEncoder().encode(document.getElementById("title").value.toLowerCase().padEnd(50, " "))
 			var cover=new TextEncoder().encode(document.getElementById("cover").value)
 			var visualizer =document.getElementById("visualization").value
 			if (cover.length===0)
@@ -596,19 +639,19 @@ d554451111c31315d51311113313553d43ad33335333311033ccb3b33c111111c111111d3bbbcc35
 				link.download = `defiance_${filename.split(".")[0]}.pcm`
 				break
 			case 1:	
-				link.download = `defiance_${filename.split(".")[0]}_lossless.defy`
+				link.download = `defiance_${filename.split(".")[0]}_8.defy`
 				break
 			case 2: 
-				link.download = `defiance_${filename.split(".")[0]}_lossy4.defy`
+				link.download = `defiance_${filename.split(".")[0]}_4.defy`
 				break
 			case 3: 
-				link.download = `defiance_${filename.split(".")[0]}_lossy3.defy`
+				link.download = `defiance_${filename.split(".")[0]}_3.defy`
 				break	
 			case 4: 
-				link.download = `defiance_${filename.split(".")[0]}_lossy2.defy`
+				link.download = `defiance_${filename.split(".")[0]}_2.defy`
 				break	
-			case 4: 
-				link.download = `defiance_${filename.split(".")[0]}_lossy1.defy`
+			case 5: 
+				link.download = `defiance_${filename.split(".")[0]}_1.defy`
 				break					
 		}		
 		link.click()
