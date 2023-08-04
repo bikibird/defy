@@ -710,10 +710,6 @@ function qpa_decoder_new(config)
    weights[2]+=sgn(hist[2])*dq
    weights[3]+=sgn(hist[3])*dq
    weights[4]+=sgn(hist[4])*dq
-   weights[1]=(weights[1]*63)>>6
-   weights[2]=(weights[2]*63)>>6
-   weights[3]=(weights[3]*63)>>6
-   weights[4]=(weights[4]*63)>>6
    hist[1]=hist[2]
    hist[2]=hist[3]
    hist[3]=hist[4]

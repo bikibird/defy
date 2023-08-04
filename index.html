@@ -381,10 +381,6 @@ function qpa_lms_update(weights, history, sample, residual, shift) {
     weights[1] += history[1] < 0 ? -delta : delta;
     weights[2] += history[2] < 0 ? -delta : delta;
     weights[3] += history[3] < 0 ? -delta : delta;
-    weights[0] = (weights[0]*63)>>6;
-    weights[1] = (weights[1]*63)>>6;
-    weights[2] = (weights[2]*63)>>6;
-    weights[3] = (weights[3]*63)>>6;
     history[0] = history[1];
     history[1] = history[2];
     history[2] = history[3];
