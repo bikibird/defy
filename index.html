@@ -254,8 +254,8 @@ const QPA1_CONFIG = {
     residual_bits: 1,
     quant_tab: [1, 1, 0, 0, 0],
     dequant_tab: [1.0, -1.0],
-    update_shift: 0,
-    predict_shift: 11,
+    update_shift: 2,
+    predict_shift: 9,
     magic: 0x31617071, /* 'qpa1' */
 };
 
@@ -266,8 +266,8 @@ const QPA2_CONFIG = {
     residual_bits: 2,
     quant_tab: [3, 3, 1, 1, 0, 0, 0, 2, 2],
     dequant_tab: [1.0, -1.0, 3.5, -3.5],
-    update_shift: 0,
-    predict_shift: 11,
+    update_shift: 2,
+    predict_shift: 9,
     magic: 0x32617071, /* 'qpa2' */
 };
 
@@ -278,8 +278,8 @@ const QPA3_CONFIG = {
     residual_bits: 3,
     quant_tab: [7, 7, 7, 5, 5, 3, 3, 1, 0, 0, 2, 2, 4, 4, 6, 6, 6],
     dequant_tab: [0.75, -0.75, 2.5, -2.5, 4.5, -4.5, 7.0, -7.0],
-    update_shift: 0,
-    predict_shift: 11,
+    update_shift: 2,
+    predict_shift: 9,
     magic: 0x33617071, /* 'qpa3' */
 };
 
@@ -395,6 +395,7 @@ function qpa_encode(bytes, config) {
     const num_samples = bytes.length;
     const num_slices = (num_samples + config.slice_len - 1) / config.slice_len;
     let lms = qpa_lms_init(4, 4);
+    let signal_dc = 0;
     const residual_range = 1 << config.residual_bits;
 
     const encoded_size = 4 + 4 + num_slices * 4;
@@ -420,12 +421,15 @@ function qpa_encode(bytes, config) {
         let best_slice;
         let best_slice_scalefactor;
         let best_lms;
+        // needed because scalefactor can early-exit
+        let best_signal_dc;
 
         for (let scalefactor = 0; scalefactor < scalefactor_tab.length; scalefactor++) {
             /* We have to reset the LMS state to the last known good one
             before trying each scalefactor, as each pass updates the LMS
             state when encoding. */
             const sf_lms = qpa_lms_init(lms.history, lms.weights);
+            let sf_signal_dc = signal_dc;
 
             const table = dequant_tab[scalefactor];
 
@@ -435,7 +439,9 @@ function qpa_encode(bytes, config) {
             let idx = slice_start;
 
             for (let i = 0; i < slice_len; i++) {
-                const sample = bytes[idx++] - 128;
+                let sample = bytes[idx++] - 128;
+                sf_signal_dc += ((sample << 10) - sf_signal_dc)>>10;
+                sample = sample - (sf_signal_dc>>10);
 
                 const predicted = qpa_lms_predict(sf_lms.weights, sf_lms.history, config.predict_shift);
                 const residual = sample - predicted;
@@ -459,11 +465,13 @@ function qpa_encode(bytes, config) {
                 best_slice = slice;
                 best_slice_scalefactor = scalefactor;
                 best_lms = sf_lms;
+                best_signal_dc = sf_signal_dc;
             }
         }
         total_err += best_error;
 
         lms = best_lms;
+        signal_dc = best_signal_dc;
         stream.write(best_slice_scalefactor, config.scale_bits);
         for (let i = 0; i < config.slice_len; i++) {
             const v = i < best_slice.length ? best_slice[i] : 0;

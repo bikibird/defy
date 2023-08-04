@@ -706,14 +706,15 @@ function qpa_decoder_new(config)
    shift-=residual_bits
    local dq=sf_tab[(word>>shift)&residual_mask]
    local recon=mid(-128,pred+dq,127)
-   weights[1]+=sgn(hist[1])*dq
-   weights[2]+=sgn(hist[2])*dq
-   weights[3]+=sgn(hist[3])*dq
-   weights[4]+=sgn(hist[4])*dq
+   local delta=(dq>>2)&-1
+   weights[1]+=sgn(hist[1])*delta
+   weights[2]+=sgn(hist[2])*delta
+   weights[3]+=sgn(hist[3])*delta
+   weights[4]+=sgn(hist[4])*delta
    hist[1]=hist[2]
    hist[2]=hist[3]
    hist[3]=hist[4]
-   hist[4]=recon>>11
+   hist[4]=recon>>9
    samples[i]=recon+128
   end
   return samples
