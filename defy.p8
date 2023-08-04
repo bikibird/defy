@@ -195,7 +195,7 @@ function play_qpa()
 				header()
 				return
 			end
-			if (not qpa_decoder) printh('no decoder','log'); return
+			if (not qpa_decoder) return
 			local num_decoded=0;
 			for i=0,receipt-1,4 do
 				slice=$(buffer+i)
