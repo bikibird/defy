@@ -32,6 +32,9 @@
 										<option value="3">Defy 2.6-bit</option>
 										<option value="4">Defy 2-bit</option>
 										<option value="5">Defy 1-bit</option>
+										<option value="6">QPA 3.2-bit</option>
+										<option value="7">QPA 2.3-bit</option>
+										<option value="8">QPA 1.1-bit</option>
 									</select>
 									</div>
 									<div class="form-group">
@@ -85,6 +88,9 @@
 								<li>Defy 2.6-Bit&mdash; 3 to 1 compresssion compared to 8-bit, lower quality</li>
 								<li>Defy 2-Bit&mdash; 4 to 1 compresssion compared to 8-bit suitable for intelligible speech.</li>
 								<li>Defy 1-Bit&mdash; 8 to 1 compresssion compared to 8-bit, lowest quality.</li>
+								<li>QPA 3.2-Bit&mdash; 2.5 to 1 compresssion compared to 8-bit, quality comparable to Defy 4-bit - which is better can depend on source material.</li>
+								<li>QPA 2.3-Bit&mdash; 3.5 to 1 compresssion compared to 8-bit, quality between Defy 2.6-Bit and Defy 4-Bit.</li>
+								<li>QPA 1.1-Bit&mdash; 7 to 1 compresssion compared to 8-bit, quality comparable to Defy 2-Bit.</li>
 							</ul>
 						<li>The antialiasing filter improves audio downsampling for most browsers including Chrome.</li>	<li>To play Defy files:</li>
 							<ol>
@@ -216,6 +222,235 @@ function halfBandFilter(samples, coefs) {
 
 function processHalfBand(samples) {
     return halfBandFilter(samples, halfBandCoefs);
+}
+
+// QPA support
+const QPA1_CONFIG = {
+    slice_len: 28,
+    scale_bits: 4,
+    scale_exponent: 1.25,
+    residual_bits: 1,
+    quant_tab: [1, 1, 0, 0, 0],
+    dequant_tab: [1.0, -1.0],
+    update_shift: 0,
+    predict_shift: 11,
+    magic: 0x31617071, /* 'qpa1' */
+};
+
+const QPA2_CONFIG = {
+    slice_len: 14,
+    scale_bits: 4,
+    scale_exponent: 1.0,
+    residual_bits: 2,
+    quant_tab: [3, 3, 1, 1, 0, 0, 0, 2, 2],
+    dequant_tab: [1.0, -1.0, 3.5, -3.5],
+    update_shift: 0,
+    predict_shift: 11,
+    magic: 0x32617071, /* 'qpa2' */
+};
+
+const QPA3_CONFIG = {
+    slice_len: 10,
+    scale_bits: 2,
+    scale_exponent: 1.5,
+    residual_bits: 3,
+    quant_tab: [7, 7, 7, 5, 5, 3, 3, 1, 0, 0, 2, 2, 4, 4, 6, 6, 6],
+    dequant_tab: [0.75, -0.75, 2.5, -2.5, 4.5, -4.5, 7.0, -7.0],
+    update_shift: 0,
+    predict_shift: 11,
+    magic: 0x33617071, /* 'qpa3' */
+};
+
+
+function floats_to_bytes(data) {
+    const bytes = new Uint8Array(data.length);
+    for (let i = 0; i < data.length; i++) {
+        const x = data[i];
+        bytes[i] = 128 + Math.floor(Math.fround(Math.max(-128, Math.min(127, (x < 0 ? 128 * x : 127 * x)))));
+    }
+    return bytes;
+}
+
+function swap_endianness(inbuf) {
+    const outbuf = new Uint8Array(Math.ceil(inbuf.length / 4)*4);
+    for (let i = 0; i < inbuf.length; i += 4) {
+        outbuf[i+0] = inbuf[i+3] ?? 0;
+        outbuf[i+1] = inbuf[i+2] ?? 0;
+        outbuf[i+2] = inbuf[i+1] ?? 0;
+        outbuf[i+3] = inbuf[i+0] ?? 0;
+    }
+    return outbuf;
+}
+
+class BitOutputStream {
+    constructor(num_bytes) {
+        this.buf = new Uint8Array(num_bytes);
+        this.pos = -1;
+        this.bit = -1;
+    }
+
+    write(value, n_bits) {
+        for (let i = n_bits-1; i >= 0; i--) {
+            if (this.bit < 0) {
+                this.bit = 7;
+                this.pos += 1;
+            }
+            this.buf[this.pos] |= ((value >> i) & 1) << this.bit;
+            this.bit -= 1;
+        }
+    }
+
+    bytes() {
+        return this.buf.slice(0, this.pos+1);
+    }
+}
+
+
+function make_reciprocal_tab(scalefactor_tab) {
+    return scalefactor_tab.map((s) =>
+        Math.floor(((1 << 8) + s - 1) / s)
+    );
+}
+function make_scalefactor_tab(scale_bits, scale_exponent) {
+    return Array(1 << scale_bits).fill().map(
+        (_, s) => qpa_round(Math.pow(s + 1, scale_exponent))
+    );
+}
+
+function expand_dequant_tab(raw_dequant_tab, scalefactor_tab) {
+    return scalefactor_tab.map((sf) => {
+        return raw_dequant_tab.map((dq) => qpa_round(dq*sf));
+    });
+}
+
+function qpa_div(reciprocal_tab, v, scalefactor) {
+    const reciprocal = reciprocal_tab[scalefactor];
+    let n = (v * reciprocal + (1 << 7)) >> 8;
+    n = n + ((v > 0) - (v < 0)) - ((n > 0) - (n < 0)); /* round away from 0 */
+    return n;
+}
+
+function qpa_clamp(v, min, max) {
+    return v < min ? min : v > max ? max : v;
+}
+
+function qpa_round(num) {
+    return Math.sign(num) * Math.round(Math.abs(num));
+}
+
+function qpa_lms_init(h, w) {
+    const history = new Int16Array(h);
+    const weights = new Int16Array(w);
+    return { history, weights };
+}
+
+function qpa_lms_predict(weights, history, shift) {
+    return ((
+        weights[0] * history[0] +
+        weights[1] * history[1] +
+        weights[2] * history[2] +
+        weights[3] * history[3]
+    ) >> shift);
+}
+
+function qpa_lms_update(weights, history, sample, residual, shift) {
+    const delta = residual >> shift;
+    weights[0] += history[0] < 0 ? -delta : delta;
+    weights[1] += history[1] < 0 ? -delta : delta;
+    weights[2] += history[2] < 0 ? -delta : delta;
+    weights[3] += history[3] < 0 ? -delta : delta;
+    history[0] = history[1];
+    history[1] = history[2];
+    history[2] = history[3];
+    history[3] = sample;
+}
+
+function qpa_encode(bytes, config) {
+    const scalefactor_tab = make_scalefactor_tab(config.scale_bits, config.scale_exponent);
+    const reciprocal_tab = make_reciprocal_tab(scalefactor_tab);
+    const dequant_tab = expand_dequant_tab(config.dequant_tab, scalefactor_tab);
+
+    const num_samples = bytes.length;
+    const num_slices = (num_samples + config.slice_len - 1) / config.slice_len;
+    let lms = qpa_lms_init(4, 4);
+    const residual_range = 1 << config.residual_bits;
+
+    const encoded_size = 4 + 4 + num_slices * 4;
+
+    // write header
+    const stream = new BitOutputStream(encoded_size);
+    stream.write(config.magic, 32);
+    stream.write(num_samples, 32);
+
+    let total_err = 0;
+    for (
+      let sample_index = 0;
+      sample_index < num_samples;
+      sample_index += config.slice_len
+    ) {
+        const slice_len = qpa_clamp(config.slice_len, 0, num_samples - sample_index);
+        const slice_start = sample_index;
+
+        /* Brute for search for the best scalefactor. Just go through all
+        16 scalefactors, encode all samples for the current slice and 
+        meassure the total squared error. */
+        let best_error = Number.MAX_SAFE_INTEGER;
+        let best_slice;
+        let best_slice_scalefactor;
+        let best_lms;
+
+        for (let scalefactor = 0; scalefactor < scalefactor_tab.length; scalefactor++) {
+            /* We have to reset the LMS state to the last known good one
+            before trying each scalefactor, as each pass updates the LMS
+            state when encoding. */
+            const sf_lms = qpa_lms_init(lms.history, lms.weights);
+
+            const table = dequant_tab[scalefactor];
+
+            // an array of slice data
+            const slice = [];
+            let current_error = 0;
+            let idx = slice_start;
+
+            for (let i = 0; i < slice_len; i++) {
+                const sample = bytes[idx++] - 128;
+
+                const predicted = qpa_lms_predict(sf_lms.weights, sf_lms.history, config.predict_shift);
+                const residual = sample - predicted;
+                const scaled = qpa_div(reciprocal_tab, residual, scalefactor);
+                const clamped = qpa_clamp(scaled, -residual_range, residual_range);
+                const quantized = config.quant_tab[clamped + residual_range];
+                const dequantized = table[quantized];
+                const reconstructed = qpa_clamp(predicted + dequantized, -128, 127);
+                const error = sample - reconstructed;
+                current_error += error * error;
+                if (current_error > best_error) {
+                    break;
+                }
+
+                qpa_lms_update(sf_lms.weights, sf_lms.history, reconstructed, dequantized, config.update_shift);
+                slice.push(quantized);
+            }
+
+            if (current_error < best_error) {
+                best_error = current_error;
+                best_slice = slice;
+                best_slice_scalefactor = scalefactor;
+                best_lms = sf_lms;
+            }
+        }
+        total_err += best_error;
+
+        lms = best_lms;
+        stream.write(best_slice_scalefactor, config.scale_bits);
+        for (let i = 0; i < config.slice_len; i++) {
+            const v = i < best_slice.length ? best_slice[i] : 0;
+            stream.write(v, config.residual_bits);
+        }
+    }
+    console.log('err:', Math.sqrt(total_err/num_samples));
+
+    return swap_endianness(stream.bytes());
 }
 
 
@@ -428,6 +663,15 @@ function processHalfBand(samples) {
 							}))
 							data=new Uint8Array([...header(),...data])
 							break	
+						case 6: // QPA 3.2 bit
+							data=new Uint8Array([...header(),...qpa_encode(floats_to_bytes(data), QPA3_CONFIG)]);
+							break
+						case 7: // QPA 2.3 bit
+							data=new Uint8Array([...header(),...qpa_encode(floats_to_bytes(data), QPA2_CONFIG)]);
+							break
+						case 8: // QPA 1.1 bit
+							data=new Uint8Array([...header(),...qpa_encode(floats_to_bytes(data), QPA1_CONFIG)]);
+							break
 						default:
 							break
 
@@ -652,6 +896,15 @@ d554451111c31315d51311113313553d43ad33335333311033ccb3b33c111111c111111d3bbbcc35
 				break	
 			case 5: 
 				link.download = `defiance_${filename.split(".")[0]}_1.defy`
+				break					
+			case 6: 
+				link.download = `defiance_${filename.split(".")[0]}_qpa_3.defy`
+				break	
+			case 7: 
+				link.download = `defiance_${filename.split(".")[0]}_qpa_2.defy`
+				break	
+			case 8: 
+				link.download = `defiance_${filename.split(".")[0]}_qpa_1.defy`
 				break					
 		}		
 		link.click()

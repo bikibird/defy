@@ -17,6 +17,12 @@ function header()
 	ejected=false
 	direction,new_sample, ad_index = 0, 0,0
 	step=7
+	-- QPA-specific setup
+	if mode==6 or mode==7 or mode==8 then
+		qpa_decoder=qpa_decoder_new(qpa_configs[9-mode])
+		-- skip magic number and sample count
+		serial(0x800,buffer,8)
+	end
 end
 function play_pcm()
 	if not pause then
@@ -168,6 +174,44 @@ function play_adpcm1()
 				poke(audio_buffer+i*8, adpcm((sample>>>7)&1,1), adpcm((sample>>>6)&1,1), adpcm((sample>>>5)&1,1), adpcm((sample>>>4)&1,1), adpcm((sample>>>3)&1,1), adpcm((sample>>>2)&1,1), adpcm((sample>>>1)&1,1),adpcm(sample&1,1))
 			end
 			if (not ejected) serial(0x808,audio_buffer,receipt*8)	
+		end	
+	end	
+	if recording and not stat(120) and #audio_string > 0 then
+		recording=false
+		printh(escape_binary_str(audio_string),"@clip")
+	end
+end
+function play_qpa()
+	if not pause then
+		local request
+		local sample
+		local defy_defy
+		local samples
+		while stat(108)<1536 and stat(120) do
+			receipt = serial(0x800, buffer, 64)
+			defy_defy=chr(peek(buffer,12))
+			if (defy_defy=="defydefy    ") then
+				serial(0x800,buffer+64,8256-64)
+				header()
+				return
+			end
+			if (not qpa_decoder) printh('no decoder','log'); return
+			local num_decoded=0;
+			for i=0,receipt-1,4 do
+				slice=$(buffer+i)
+				if recording then
+					if #audio_string < 32000 then
+						audio_string..=chr(peek(buffer+i,4))
+					else
+						recording=false
+						printh(escape_binary_str(audio_string),"@clip")
+					end	
+				end
+				local decoded=qpa_decoder(slice)
+				poke(audio_buffer+num_decoded, unpack(decoded))
+				num_decoded+=#decoded
+			end
+			if (not ejected) serial(0x808,audio_buffer,num_decoded)	
 		end	
 	end	
 	if recording and not stat(120) and #audio_string > 0 then
@@ -341,7 +385,16 @@ function _init()
 	direction=1
 	step = 7
 	visualizer=1
-	modes={{playback=play_pcm,buffer=buffer,format="8-bit"},{playback=play_adpcm4,buffer=audio_buffer,format="4-bit"},{playback=play_adpcm3,buffer=audio_buffer,format="2.6-bit"},{playback=play_adpcm2,buffer=audio_buffer,format="2-bit"},{playback=play_adpcm1,buffer=audio_buffer,format="1-bit"}}
+	modes={
+		{playback=play_pcm,buffer=buffer,format="8-bit"},
+		{playback=play_adpcm4,buffer=audio_buffer,format="4-bit"},
+		{playback=play_adpcm3,buffer=audio_buffer,format="2.6-bit"},
+		{playback=play_adpcm2,buffer=audio_buffer,format="2-bit"},
+		{playback=play_adpcm1,buffer=audio_buffer,format="1-bit"},
+		{playback=play_qpa,buffer=audio_buffer,format="qpa 3.2-bit"},
+		{playback=play_qpa,buffer=audio_buffer,format="qpa 2.3-bit"},
+		{playback=play_qpa,buffer=audio_buffer,format="qpa 1.1-bit"},
+	}
 	title="no title"
 end	
 _update=function()
@@ -589,6 +642,84 @@ do  --defy audio string library by bikibird
 		clips[cued].done=true
 	end
 end
+
+-- QPA support
+
+qpa_configs={
+ {
+  slice_len=28,
+  scale_bits=4,
+  scale_exponent=1.25,
+  residual_bits=1,
+  dequant_tab={1,-1},
+  magic=0x3161.7071,
+ },
+ {
+  slice_len=14,
+  scale_bits=4,
+  scale_exponent=1,
+  residual_bits=2,
+  dequant_tab={1,-1,3.5,-3.5},
+  magic=0x3261.7071,
+ },
+ {
+  slice_len=10,
+  scale_bits=2,
+  scale_exponent=1.5,
+  residual_bits=3,
+  dequant_tab={.75,-.75,2.5,-2.5,4.5,-4.5,7,-7},
+  magic=0x3361.7071,
+ },
+}
+
+function qpa_decoder_new(config)
+ local function qpa_round(x)
+  return sgn(x)*flr(abs(x)+.5)
+ end
+
+ local dq_tab={}
+ for i=1,(1<<config.scale_bits) do
+  local sf=qpa_round(i^config.scale_exponent)
+  local sf_row={}
+  for j,dq in ipairs(config.dequant_tab) do
+   sf_row[j-1]=qpa_round(dq*sf)
+  end
+  dq_tab[i-1]=sf_row
+ end
+
+ local hist={0,0,0,0}
+ local weights={0,0,0,0}
+
+ return function(word)
+  local samples={}
+  local hist=hist
+  local weights=weights
+  local residual_bits=config.residual_bits
+  local sf_mask=(1<<config.scale_bits)-1
+  local residual_mask=(1<<residual_bits)-1
+  local shift=16-config.scale_bits
+
+  local sf=(word>>shift)&sf_mask
+  local sf_tab=dq_tab[sf]
+  for i=1,config.slice_len do
+   local pred=(weights[1]*hist[1]+weights[2]*hist[2]+weights[3]*hist[3]+weights[4]*hist[4])&-1
+   shift-=residual_bits
+   local dq=sf_tab[(word>>shift)&residual_mask]
+   local recon=mid(-128,pred+dq,127)
+   weights[1]+=sgn(hist[1])*dq
+   weights[2]+=sgn(hist[2])*dq
+   weights[3]+=sgn(hist[3])*dq
+   weights[4]+=sgn(hist[4])*dq
+   hist[1]=hist[2]
+   hist[2]=hist[3]
+   hist[3]=hist[4]
+   hist[4]=recon>>11
+   samples[i]=recon+128
+  end
+  return samples
+ end
+end
+
 __map__
 100102030405060708090a0b0c0d0e0f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 101112131415161718191a1b1c1d1e1f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
