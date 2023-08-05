@@ -19,7 +19,8 @@ function header()
 	step=7
 	-- QPA-specific setup
 	if mode==6 or mode==7 or mode==8 then
-		qpa_decoder=qpa_decoder_new(qpa_configs[9-mode])
+		qpa_bits=9-mode
+		qpa_decoder=qpa_decoder_new(qpa_configs[qpa_bits])
 		-- skip magic number and sample count
 		serial(0x800,buffer,8)
 	end
@@ -187,16 +188,18 @@ function play_qpa()
 		local sample
 		local defy_defy
 		local samples
-		while stat(108)<1536 and stat(120) do
-			receipt = serial(0x800, buffer, 64)
+		local chunk_start_ptr=audio_buffer
+		local write_ptr=chunk_start_ptr
+		while stat(108)<1024 and stat(120) do
+			receipt = serial(0x800, buffer, 72*qpa_bits)
 			defy_defy=chr(peek(buffer,12))
 			if (defy_defy=="defydefy    ") then
-				serial(0x800,buffer+64,8256-64)
+				serial(0x800,buffer+72*qpa_bits,8256-72*qpa_bits)
 				header()
 				return
 			end
 			if (not qpa_decoder) return
-			local num_decoded=0;
+			write_ptr=chunk_start_ptr
 			for i=0,receipt-1,4 do
 				slice=$(buffer+i)
 				if recording then
@@ -208,10 +211,11 @@ function play_qpa()
 					end	
 				end
 				local decoded=qpa_decoder(slice)
-				poke(audio_buffer+num_decoded, unpack(decoded))
-				num_decoded+=#decoded
+				poke(write_ptr, unpack(decoded))
+				write_ptr+=#decoded
 			end
-			if (not ejected) serial(0x808,audio_buffer,num_decoded)	
+			if (not ejected) serial(0x808,chunk_start_ptr,write_ptr-chunk_start_ptr)	
+			chunk_start_ptr=write_ptr
 		end	
 	end	
 	if recording and not stat(120) and #audio_string > 0 then
