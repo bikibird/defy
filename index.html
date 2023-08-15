@@ -32,9 +32,10 @@
 										<option value="3">Defy 2.6-bit</option>
 										<option value="4">Defy 2-bit</option>
 										<option value="5">Defy 1-bit</option>
-										<option value="6">QPA 3.2-bit</option>
-										<option value="7">QPA 2.3-bit</option>
-										<option value="8">QPA 1.1-bit</option>
+										<option value="6">QPA 4.6-bit</option>
+										<option value="7">QPA 3.2-bit</option>
+										<option value="8">QPA 2.3-bit</option>
+										<option value="9">QPA 1.1-bit</option>
 									</select>
 									</div>
 									<div class="form-group">
@@ -252,10 +253,10 @@ const QPA1_CONFIG = {
     scale_bits: 4,
     scale_exponent: 1.25,
     residual_bits: 1,
-    quant_tab: [1, 1, 0, 0, 0],
-    dequant_tab: [1.0, -1.0],
+    dequant_tab: [1, -1],
+    chunk_size: 7,
     update_shift: 2,
-    predict_shift: 9,
+    predict_shift: 8,
     magic: 0x31617071, /* 'qpa1' */
 };
 
@@ -264,10 +265,10 @@ const QPA2_CONFIG = {
     scale_bits: 4,
     scale_exponent: 1.0,
     residual_bits: 2,
-    quant_tab: [3, 3, 1, 1, 0, 0, 0, 2, 2],
     dequant_tab: [1.0, -1.0, 3.5, -3.5],
+    chunk_size: 4,
     update_shift: 2,
-    predict_shift: 9,
+    predict_shift: 8,
     magic: 0x32617071, /* 'qpa2' */
 };
 
@@ -276,11 +277,23 @@ const QPA3_CONFIG = {
     scale_bits: 2,
     scale_exponent: 1.5,
     residual_bits: 3,
-    quant_tab: [7, 7, 7, 5, 5, 3, 3, 1, 0, 0, 2, 2, 4, 4, 6, 6, 6],
     dequant_tab: [0.75, -0.75, 2.5, -2.5, 4.5, -4.5, 7.0, -7.0],
+    chunk_size: 3,
     update_shift: 2,
     predict_shift: 9,
     magic: 0x33617071, /* 'qpa3' */
+};
+
+const QPA4_CONFIG = {
+    slice_len: 7,
+    scale_bits: 4,
+    scale_exponent: 1.0,
+    residual_bits: 4,
+    dequant_tab: [0.75, -0.75, 2.5, -2.5, 4.5, -4.5, 6.5, -6.5, 8.5, -8.5, 10.5, -10.5, 12.5, -12.5, 15.0, -15.0],
+    chunk_size: 2,
+    update_shift: 2,
+    predict_shift: 9,
+    magic: 0x34617071, /* 'qpa4' */
 };
 
 
@@ -328,11 +341,6 @@ class BitOutputStream {
 }
 
 
-function make_reciprocal_tab(scalefactor_tab) {
-    return scalefactor_tab.map((s) =>
-        Math.floor(((1 << 8) + s - 1) / s)
-    );
-}
 function make_scalefactor_tab(scale_bits, scale_exponent) {
     return Array(1 << scale_bits).fill().map(
         (_, s) => qpa_round(Math.pow(s + 1, scale_exponent))
@@ -345,13 +353,6 @@ function expand_dequant_tab(raw_dequant_tab, scalefactor_tab) {
     });
 }
 
-function qpa_div(reciprocal_tab, v, scalefactor) {
-    const reciprocal = reciprocal_tab[scalefactor];
-    let n = (v * reciprocal + (1 << 7)) >> 8;
-    n = n + ((v > 0) - (v < 0)) - ((n > 0) - (n < 0)); /* round away from 0 */
-    return n;
-}
-
 function qpa_clamp(v, min, max) {
     return v < min ? min : v > max ? max : v;
 }
@@ -360,125 +361,178 @@ function qpa_round(num) {
     return Math.sign(num) * Math.round(Math.abs(num));
 }
 
-function qpa_lms_init(h, w) {
-    const history = new Int16Array(h);
-    const weights = new Int16Array(w);
-    return { history, weights };
-}
+class QPAEncoder {
+    constructor(samples, predict_shift, update_shift) {
+        this.weights = new Int16Array(4);
+        this.history = new Int8Array(4);
+        this.error_dc = 0;
+        this.idx = 0;
+        this.samples = samples;
+        this.predict_shift = predict_shift;
+        this.update_shift = update_shift;
+    }
 
-function qpa_lms_predict(weights, history, shift) {
-    return ((
-        weights[0] * history[0] +
-        weights[1] * history[1] +
-        weights[2] * history[2] +
-        weights[3] * history[3]
-    ) >> shift);
-}
+    predict() {
+        const weights = this.weights;
+        const history = this.history;
+        return ((
+            weights[0] * history[0] +
+            weights[1] * history[1] +
+            weights[2] * history[2] +
+            weights[3] * history[3]
+        ) >> this.predict_shift);
+    }
 
-function qpa_lms_update(weights, history, sample, residual, shift) {
-    const delta = residual >> shift;
-    weights[0] += history[0] < 0 ? -delta : delta;
-    weights[1] += history[1] < 0 ? -delta : delta;
-    weights[2] += history[2] < 0 ? -delta : delta;
-    weights[3] += history[3] < 0 ? -delta : delta;
-    history[0] = history[1];
-    history[1] = history[2];
-    history[2] = history[3];
-    history[3] = sample;
+    update(residual, reconstructed) {
+        const sample = this.samples[this.idx++] - 128;
+        const weights = this.weights;
+        const history = this.history;
+        const delta = residual >> this.update_shift;
+        weights[0] += history[0] < 0 ? -delta : delta;
+        weights[1] += history[1] < 0 ? -delta : delta;
+        weights[2] += history[2] < 0 ? -delta : delta;
+        weights[3] += history[3] < 0 ? -delta : delta;
+        history[0] = history[1];
+        history[1] = history[2];
+        history[2] = history[3];
+        history[3] = reconstructed;
+        let error = sample-reconstructed;
+        this.error_dc = (this.error_dc + error)*.5;
+        error -= .875*this.error_dc;
+        return error*error;
+    }
+
+    clone_from(other) {
+        const this_weights = this.weights;
+        const this_history = this.history;
+        const other_weights = other.weights;
+        const other_history = other.history;
+        this_weights[0] = other_weights[0];
+        this_weights[1] = other_weights[1];
+        this_weights[2] = other_weights[2];
+        this_weights[3] = other_weights[3];
+        this_history[0] = other_history[0];
+        this_history[1] = other_history[1];
+        this_history[2] = other_history[2];
+        this_history[3] = other_history[3];
+        this.error_dc = other.error_dc;
+        this.idx = other.idx;
+    }
+
+    copy() {
+        const new_enc = new QPAEncoder(this.samples, this.predict_shift, this.update_shift);
+        new_enc.clone_from(this);
+        return new_enc;
+    }
+
+    samples_left() {
+        return this.samples.length - this.idx;
+    }
 }
 
 function qpa_encode(bytes, config) {
     const scalefactor_tab = make_scalefactor_tab(config.scale_bits, config.scale_exponent);
-    const reciprocal_tab = make_reciprocal_tab(scalefactor_tab);
     const dequant_tab = expand_dequant_tab(config.dequant_tab, scalefactor_tab);
 
     const num_samples = bytes.length;
     const num_slices = (num_samples + config.slice_len - 1) / config.slice_len;
-    let lms = qpa_lms_init(4, 4);
-    let signal_dc = 0;
-    const residual_range = 1 << config.residual_bits;
+    const enc = new QPAEncoder(bytes, config.predict_shift, config.update_shift);
+    enc.weights[2]=-1<<5;
+    enc.weights[3]=1<<6;
+    const sf_enc = enc.copy();
+    const best_sf_enc = enc.copy();
+    const chunk_enc = enc.copy();
+    const best_chunk_enc = enc.copy();
 
-    const encoded_size = 4 + 4 + num_slices * 4;
+    const encoded_size =
+      8 /* 8 byte file header */ +
+      num_slices * 4; /* 4 byte slices */
 
     // write header
     const stream = new BitOutputStream(encoded_size);
     stream.write(config.magic, 32);
     stream.write(num_samples, 32);
+    let error = 0;
 
-    let total_err = 0;
     for (
       let sample_index = 0;
       sample_index < num_samples;
       sample_index += config.slice_len
     ) {
         const slice_len = qpa_clamp(config.slice_len, 0, num_samples - sample_index);
-        const slice_start = sample_index;
-
         /* Brute for search for the best scalefactor. Just go through all
         16 scalefactors, encode all samples for the current slice and 
         meassure the total squared error. */
-        let best_error = Number.MAX_SAFE_INTEGER;
-        let best_slice;
-        let best_slice_scalefactor;
-        let best_lms;
-        // needed because scalefactor can early-exit
-        let best_signal_dc;
+        let best_sf_error = Infinity;
+        let best_sf_slice;
+        let best_sf_scale;
 
         for (let scalefactor = 0; scalefactor < scalefactor_tab.length; scalefactor++) {
-            /* We have to reset the LMS state to the last known good one
-            before trying each scalefactor, as each pass updates the LMS
-            state when encoding. */
-            const sf_lms = qpa_lms_init(lms.history, lms.weights);
-            let sf_signal_dc = signal_dc;
-
             const table = dequant_tab[scalefactor];
+            sf_enc.clone_from(enc);
+            let sf_error = 0;
 
             // an array of slice data
             const slice = [];
-            let current_error = 0;
-            let idx = slice_start;
-
-            for (let i = 0; i < slice_len; i++) {
-                let sample = bytes[idx++] - 128;
-                sf_signal_dc += ((sample << 10) - sf_signal_dc)>>10;
-                sample = sample - (sf_signal_dc>>10);
-
-                const predicted = qpa_lms_predict(sf_lms.weights, sf_lms.history, config.predict_shift);
-                const residual = sample - predicted;
-                const scaled = qpa_div(reciprocal_tab, residual, scalefactor);
-                const clamped = qpa_clamp(scaled, -residual_range, residual_range);
-                const quantized = config.quant_tab[clamped + residual_range];
-                const dequantized = table[quantized];
-                const reconstructed = qpa_clamp(predicted + dequantized, -128, 127);
-                const error = sample - reconstructed;
-                current_error += error * error;
-                if (current_error > best_error) {
+            for (let i = 0; i < slice_len; i+=config.chunk_size) {
+                let best_chunk_error = Infinity;
+                let best_chunk_quant;
+                const chunk_size = Math.min(config.chunk_size, slice_len-i);
+                const residual_mask = (1 << config.residual_bits)-1;
+                for (let j = 0; j < (1 << (config.residual_bits * chunk_size)); j++) {
+                    chunk_enc.clone_from(sf_enc);
+                    let chunk_error = 0;
+                    for (let k = 0; k < chunk_size; k++) {
+                        const predicted = chunk_enc.predict();
+                        const quant = (j>>(k * config.residual_bits))&residual_mask;
+                        const dequantized = table[quant];
+                        const reconstructed = qpa_clamp(predicted + dequantized, -128, 127);
+                        chunk_error += chunk_enc.update(dequantized, reconstructed);
+                        if (chunk_error > best_chunk_error) {
+                            break;
+                        }
+                    }
+                    if (chunk_error < best_chunk_error) {
+                        best_chunk_quant = j;
+                        best_chunk_error = chunk_error;
+                        best_chunk_enc.clone_from(chunk_enc);
+                    }
+                }
+                if (best_chunk_error==Infinity) {
+                    throw new Error('no best value found');
+                }
+                sf_error += best_chunk_error;
+                if (sf_error > best_sf_error) {
                     break;
                 }
-
-                qpa_lms_update(sf_lms.weights, sf_lms.history, reconstructed, dequantized, config.update_shift);
-                slice.push(quantized);
+                sf_enc.clone_from(best_chunk_enc);
+                for (let k = 0; k < chunk_size; k++) {
+                    const quant = (best_chunk_quant>>(k * config.residual_bits))&residual_mask;
+                    slice.push(quant);
+                }
             }
 
-            if (current_error < best_error) {
-                best_error = current_error;
-                best_slice = slice;
-                best_slice_scalefactor = scalefactor;
-                best_lms = sf_lms;
-                best_signal_dc = sf_signal_dc;
+            if (sf_error < best_sf_error) {
+                best_sf_error = sf_error;
+                best_sf_slice = slice;
+                best_sf_scale = scalefactor;
+                best_sf_enc.clone_from(sf_enc);
             }
         }
-        total_err += best_error;
-
-        lms = best_lms;
-        signal_dc = best_signal_dc;
-        stream.write(best_slice_scalefactor, config.scale_bits);
+        if (best_sf_error==Infinity) {
+            throw new Error('no best value found');
+        }
+        enc.clone_from(best_sf_enc);
+        stream.write(best_sf_scale, config.scale_bits);
+        // now write each datum in the slice
         for (let i = 0; i < config.slice_len; i++) {
-            const v = i < best_slice.length ? best_slice[i] : 0;
+            // the last frame of a file might be smaller than slice_len
+            const v = i < best_sf_slice.length ? best_sf_slice[i] : 0;
             stream.write(v, config.residual_bits);
         }
+        error += best_sf_error;
     }
-    console.log('err:', Math.sqrt(total_err/num_samples));
+    console.log('err:', Math.sqrt(error/num_samples));
 
     return swap_endianness(stream.bytes());
 }
@@ -693,13 +747,16 @@ function qpa_encode(bytes, config) {
 							}))
 							data=new Uint8Array([...header(),...data])
 							break	
-						case 6: // QPA 3.2 bit
+						case 6: // QPA 4.6 bit
+							data=new Uint8Array([...header(),...qpa_encode(floats_to_bytes(data), QPA4_CONFIG)]);
+							break
+						case 7: // QPA 3.2 bit
 							data=new Uint8Array([...header(),...qpa_encode(floats_to_bytes(data), QPA3_CONFIG)]);
 							break
-						case 7: // QPA 2.3 bit
+						case 8: // QPA 2.3 bit
 							data=new Uint8Array([...header(),...qpa_encode(floats_to_bytes(data), QPA2_CONFIG)]);
 							break
-						case 8: // QPA 1.1 bit
+						case 9: // QPA 1.1 bit
 							data=new Uint8Array([...header(),...qpa_encode(floats_to_bytes(data), QPA1_CONFIG)]);
 							break
 						default:
@@ -928,12 +985,15 @@ d554451111c31315d51311113313553d43ad33335333311033ccb3b33c111111c111111d3bbbcc35
 				link.download = `defiance_${filename.split(".")[0]}_1.defy`
 				break					
 			case 6: 
-				link.download = `defiance_${filename.split(".")[0]}_qpa_3.defy`
+				link.download = `defiance_${filename.split(".")[0]}_qpa_4.defy`
 				break	
 			case 7: 
-				link.download = `defiance_${filename.split(".")[0]}_qpa_2.defy`
+				link.download = `defiance_${filename.split(".")[0]}_qpa_3.defy`
 				break	
 			case 8: 
+				link.download = `defiance_${filename.split(".")[0]}_qpa_2.defy`
+				break	
+			case 9: 
 				link.download = `defiance_${filename.split(".")[0]}_qpa_1.defy`
 				break					
 		}		

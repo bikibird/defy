@@ -18,8 +18,8 @@ function header()
 	direction,new_sample, ad_index = 0, 0,0
 	step=7
 	-- QPA-specific setup
-	if mode==6 or mode==7 or mode==8 then
-		qpa_bits=9-mode
+	if mode==6 or mode==7 or mode==8 or mode==9 then
+		qpa_bits=10-mode
 		qpa_decoder=qpa_decoder_new(qpa_configs[qpa_bits])
 		-- skip magic number and sample count
 		serial(0x800,buffer,8)
@@ -395,6 +395,7 @@ function _init()
 		{playback=play_adpcm3,buffer=audio_buffer,format="2.6-bit"},
 		{playback=play_adpcm2,buffer=audio_buffer,format="2-bit"},
 		{playback=play_adpcm1,buffer=audio_buffer,format="1-bit"},
+		{playback=play_qpa,buffer=audio_buffer,format="qpa 4.6-bit"},
 		{playback=play_qpa,buffer=audio_buffer,format="qpa 3.2-bit"},
 		{playback=play_qpa,buffer=audio_buffer,format="qpa 2.3-bit"},
 		{playback=play_qpa,buffer=audio_buffer,format="qpa 1.1-bit"},
@@ -657,6 +658,7 @@ qpa_configs={
   residual_bits=1,
   dequant_tab={1,-1},
   magic=0x3161.7071,
+  predict_shift=8,
  },
  {
   slice_len=14,
@@ -665,6 +667,7 @@ qpa_configs={
   residual_bits=2,
   dequant_tab={1,-1,3.5,-3.5},
   magic=0x3261.7071,
+  predict_shift=8,
  },
  {
   slice_len=10,
@@ -673,6 +676,16 @@ qpa_configs={
   residual_bits=3,
   dequant_tab={.75,-.75,2.5,-2.5,4.5,-4.5,7,-7},
   magic=0x3361.7071,
+  predict_shift=9,
+ },
+ {
+  slice_len=7,
+  scale_bits=4,
+  scale_exponent=1,
+  residual_bits=4,
+  dequant_tab={.75,-.75,2.5,-2.5,4.5,-4.5,6.5,-6.5,8.5,-8.5,10.5,-10.5,12.5,-12.5,15,-15},
+  magic=0x3461.7071,
+  predict_shift=9,
  },
 }
 
@@ -692,7 +705,7 @@ function qpa_decoder_new(config)
  end
 
  local hist={0,0,0,0}
- local weights={0,0,0,0}
+ local weights={0,0,-32,64}
 
  return function(word)
   local samples={}
@@ -702,6 +715,7 @@ function qpa_decoder_new(config)
   local sf_mask=(1<<config.scale_bits)-1
   local residual_mask=(1<<residual_bits)-1
   local shift=16-config.scale_bits
+  local predict_shift=config.predict_shift
 
   local sf=(word>>shift)&sf_mask
   local sf_tab=dq_tab[sf]
@@ -710,7 +724,7 @@ function qpa_decoder_new(config)
    shift-=residual_bits
    local dq=sf_tab[(word>>shift)&residual_mask]
    local recon=mid(-128,pred+dq,127)
-   local delta=(dq>>2)&-1
+   local delta=dq\4
    weights[1]+=sgn(hist[1])*delta
    weights[2]+=sgn(hist[2])*delta
    weights[3]+=sgn(hist[3])*delta
@@ -718,7 +732,7 @@ function qpa_decoder_new(config)
    hist[1]=hist[2]
    hist[2]=hist[3]
    hist[3]=hist[4]
-   hist[4]=recon>>9
+   hist[4]=recon>>predict_shift
    samples[i]=recon+128
   end
   return samples
