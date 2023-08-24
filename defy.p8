@@ -18,7 +18,7 @@ function header()
 	direction,new_sample, ad_index = 0, 0,0
 	step=7
 	-- QPA-specific setup
-	if mode==6 or mode==7 or mode==8 or mode==9 or mode==10 then
+	if mode>=6 and mode<=10 then
 		qpa_bits=11-mode
 		qpa_decoder=qpa_decoder_new(qpa_configs[qpa_bits])
 		-- skip magic number and sample count
