@@ -1103,7 +1103,7 @@ d554451111c31315d51311113313553d43ad33335333311033ccb3b33c111111c111111d3bbbcc35
 				}
 			}))
 			
-			return new Uint8Array([...identifier,format,visualizer,...title,...coverData])
+			return new Uint8Array([...identifier,format,visualizer,...title,...coverData]).slice(0, 8256)
 		}	  
 		fileReader.readAsArrayBuffer(file)
 		spinner.classList.add("d-none")
