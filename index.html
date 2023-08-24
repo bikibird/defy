@@ -48,6 +48,10 @@
 											<input class="form-check-input" type="checkbox" id="antialiasing" checked>
 											<label class="form-check-label " for="antialiasing">Apply Antialiasing Filter </label>
 										</div>
+										<div class="form-check d-none" id="qpa-hq">
+											<input class="form-check-input" type="checkbox" id="qpa-hq-enabled">
+											<label class="form-check-label" for="hq-mode">HQ Mode (slow, small/no effect)</label>
+										</div>
 									</div>
 									<div id="defyOnly">	
 										<div class="form-group">
@@ -157,6 +161,14 @@
 			var defyOnly=document.getElementById("defyOnly")
 			if (e.target.value==="0"){defyOnly.classList.add("d-none")}
 			else {defyOnly.classList.remove("d-none")}
+			var qpaHQ=document.getElementById("qpa-hq")
+			if (parseInt(e.target.value)<6){
+				qpaHQ.classList.remove("d-inline-block")
+				qpaHQ.classList.add("d-none")
+			} else {
+				qpaHQ.classList.remove("d-none")
+				qpaHQ.classList.add("d-inline-block")
+			}
 		})
 		document.getElementById("generateButton").addEventListener("click", (e) => 
 		{
@@ -561,9 +573,13 @@ class QPAEncoder {
     }
 }
 
-function qpa_encode(data, config) {
+function qpa_encode(data, config, hq) {
     const scalefactor_tab = config.scale_tab ?? make_scalefactor_tab(config.scale_bits, config.scale_exponent);
     const dequant_tab = expand_dequant_tab(config.dequant_tab, scalefactor_tab);
+    config = {
+        ...config,
+        chunk_size: hq ? config.chunk_size : 1,
+    };
 
     const num_samples = data.length;
     const num_slices = (num_samples + config.slice_len - 1) / config.slice_len;
@@ -747,6 +763,7 @@ function qpa_encode(data, config) {
 		fileReader.onload = function(e)
 		{
 			var antialias=document.getElementById("antialiasing").checked
+			var qpaHQ=document.getElementById("qpa-hq-enabled").checked
 			var source	
 			audioContext.decodeAudioData(e.target.result).then(function(buffer)
 			{
@@ -878,19 +895,19 @@ function qpa_encode(data, config) {
 							data=new Uint8Array([...header(),...data])
 							break	
 						case 6: // QPA 4.6 bit
-							data=new Uint8Array([...header(),...qpa_encode(data, QPA5_CONFIG)]);
+							data=new Uint8Array([...header(),...qpa_encode(data, QPA5_CONFIG, qpaHQ)]);
 							break
 						case 7: // QPA 3.6 bit
-							data=new Uint8Array([...header(),...qpa_encode(data, QPA4_CONFIG)]);
+							data=new Uint8Array([...header(),...qpa_encode(data, QPA4_CONFIG, qpaHQ)]);
 							break
 						case 8: // QPA 3.2 bit
-							data=new Uint8Array([...header(),...qpa_encode(data, QPA3_CONFIG)]);
+							data=new Uint8Array([...header(),...qpa_encode(data, QPA3_CONFIG, qpaHQ)]);
 							break
 						case 9: // QPA 2.3 bit
-							data=new Uint8Array([...header(),...qpa_encode(data, QPA2_CONFIG)]);
+							data=new Uint8Array([...header(),...qpa_encode(data, QPA2_CONFIG, qpaHQ)]);
 							break
 						case 10: // QPA 1.1 bit
-							data=new Uint8Array([...header(),...qpa_encode(data, QPA1_CONFIG)]);
+							data=new Uint8Array([...header(),...qpa_encode(data, QPA1_CONFIG, qpaHQ)]);
 							break
 						default:
 							break
