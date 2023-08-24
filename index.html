@@ -266,8 +266,8 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 const QPA1_CONFIG = {
     slice_len: 28,
     scale_bits: 4,
-    residual_bits: 1,
     scale_exponent: 2,
+    residual_bits: 1,
     dequant_tab: [0.125, -0.125],
     chunk_size: 7,
     update_shift: 3,
@@ -278,8 +278,8 @@ const QPA1_CONFIG = {
 const QPA2_CONFIG = {
     slice_len: 14,
     scale_bits: 4,
-    residual_bits: 2,
     scale_exponent: 2,
+    residual_bits: 2,
     dequant_tab: [0x10/256, -0x10/256, 0x40/256, -0x40/256],
     chunk_size: 4,
     update_shift: 3,
@@ -288,10 +288,10 @@ const QPA2_CONFIG = {
 };
 
 const QPA3_CONFIG = {
-    slice_len: 9,
-    scale_bits: 5,
-    residual_bits: 3,
+    slice_len: 10,
+    scale_bits: 2,
     scale_exponent: 2,
+    residual_bits: 3,
     dequant_tab: [0x60/256,-0x60/256,0x14b/256,-0x14b/256,0x28f/256,-0x28f/256,0x400/256,-0x400/256],
     chunk_size: 3,
     update_shift: 3,
@@ -300,12 +300,12 @@ const QPA3_CONFIG = {
 };
 
 const QPA4_CONFIG = {
-    slice_len: 7,
-    scale_bits: 4,
-    residual_bits: 4,
+    slice_len: 9,
+    scale_bits: 5,
     scale_exponent: 2,
+    residual_bits: 3,
     dequant_tab: [0x2/256,-0x2/256,0x8/256,-0x8/256,0xf/256,-0xf/256,0x18/256,-0x18/256],
-    chunk_size: 2,
+    chunk_size: 3,
     update_shift: 3,
     predict_shift: 7,
     magic: 0x34617071, /* 'qpa4' */
