@@ -715,11 +715,10 @@ function qpa_decoder_new(config)
 
   local sf=(word>>shift)&sf_mask
   local sf_tab=dq_tab[sf]
-  local zero_mult=word==0 and 0 or 1
   for i=1,config.slice_len do
    local pred=(weights[1]*hist[1]+weights[2]*hist[2]+weights[3]*hist[3]+weights[4]*hist[4])
    shift-=residual_bits
-   local dq=sf_tab[(word>>shift)&residual_mask]*zero_mult
+   local dq=sf_tab[(word>>shift)&residual_mask]
    local recon=mid(-128,pred+dq,127)
    local delta=dq>>3
    weights[1]+=sgn(hist[1])*delta

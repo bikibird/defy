@@ -233,7 +233,7 @@ function processHalfBand(samples) {
 //
 
 /*
-The QPA encoder is derived from qoa-format (https://github.com/mattdesl/qoa-format) under the MIT License:
+The QPA encoder is derived in part from qoa-format (https://github.com/mattdesl/qoa-format) under the MIT License:
 
 The MIT License (MIT) Copyright (c) 2020 Matt DesLauriers
 
@@ -532,7 +532,7 @@ class QPAEncoder {
 
         this.idx += 1;
 
-        return error*error/(1+this.rms);
+        return error*error/(16+this.rms);
     }
 
     clone_from(other) {
@@ -610,14 +610,13 @@ function qpa_encode(data, config) {
                 let best_chunk_quant;
                 const chunk_size = Math.min(config.chunk_size, slice_len-i);
                 const residual_mask = (1 << config.residual_bits)-1;
-                let zero_mult=(scalefactor===0) ? 0 : 1;
                 for (let j = 0; j < (1 << (config.residual_bits * chunk_size)); j++) {
                     chunk_enc.clone_from(sf_enc);
                     let chunk_error = 0;
                     for (let k = 0; k < chunk_size; k++) {
                         const predicted = chunk_enc.predict();
                         const quant = (j>>(k * config.residual_bits))&residual_mask;
-                        const dequantized = table[quant] * zero_mult;
+                        const dequantized = table[quant];
                         const reconstructed = qpa_clamp((predicted + dequantized)&0xffffffff, 65536*-128, 65536*127);
                         chunk_error += chunk_enc.update(dequantized, reconstructed);
                         if (chunk_error > best_chunk_error) {
@@ -630,7 +629,6 @@ function qpa_encode(data, config) {
                         best_chunk_enc.clone_from(chunk_enc);
                     }
                 }
-                zero_mult=1;
                 if (best_chunk_error==Infinity) {
                     throw new Error('no best value found');
                 }
@@ -1098,7 +1096,7 @@ d554451111c31315d51311113313553d43ad33335333311033ccb3b33c111111c111111d3bbbcc35
 	{
 		var file = new Blob([data])
 		var link = document.createElement('a')
-		link.href = URL.createObjectURL(file, {"type": "application/octet-stream"})
+		link.href = URL.createObjectURL(file)
 		switch (format) 
 		{
 			case 0:
