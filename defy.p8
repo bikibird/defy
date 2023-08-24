@@ -200,7 +200,7 @@ function play_qpa()
 			end
 			if (not qpa_decoder) return
 			write_ptr=chunk_start_ptr
-			for i=0,receipt-4,4 do
+			for i=0,receipt-1,4 do
 				slice=$(buffer+i)
 				if recording then
 					if #audio_string < 32000 then

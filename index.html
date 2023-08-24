@@ -904,7 +904,7 @@ function qpa_encode(data, config) {
 		{
 
 			var identifier=new TextEncoder().encode("defydefy    ")
-			var title=new TextEncoder().encode(document.getElementById("title").value.toLowerCase().padEnd(50, " "))
+			var title=new TextEncoder().encode(document.getElementById("title").value.toLowerCase().padEnd(50, " ")).slice(0, 50)
 			var cover=new TextEncoder().encode(document.getElementById("cover").value)
 			var visualizer =document.getElementById("visualization").value
 			if (cover.length===0)
