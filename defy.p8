@@ -689,12 +689,10 @@ qpa_configs={
 }
 
 function qpa_decoder_new(config)
- --printh('MAGIC '..tostr(config.magic,3)..' '..mode..' '..qpa_bits, 'log')
  local dq_tab={}
  for i=1,1<<config.scale_bits do
   local sf_row={}
   for j,dq in ipairs(config.dequant_tab) do
-   --printh('sf '..i..' '..j..' '..tostr(sf,2)..' '..tostr(dq,2)..' '..tostr(dq*sf,2),'log')
    sf_row[j-1]=dq*i*i
   end
   dq_tab[i-1]=sf_row
@@ -716,7 +714,7 @@ function qpa_decoder_new(config)
   local sf=(word>>shift)&sf_mask
   local sf_tab=dq_tab[sf]
   for i=1,config.slice_len do
-   local pred=(weights[1]*hist[1]+weights[2]*hist[2]+weights[3]*hist[3]+weights[4]*hist[4])
+   local pred=weights[1]*hist[1]+weights[2]*hist[2]+weights[3]*hist[3]+weights[4]*hist[4]
    shift-=residual_bits
    local dq=sf_tab[(word>>shift)&residual_mask]
    local recon=mid(-128,pred+dq,127)
