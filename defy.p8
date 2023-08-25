@@ -19,10 +19,22 @@ function header()
 	step=7
 	-- QPA-specific setup
 	if mode>=6 and mode<=10 then
-		qpa_bits=11-mode
-		qpa_decoder=qpa_decoder_new(qpa_configs[qpa_bits])
-		-- skip magic number and sample count
+		-- read magic number and sample count
 		serial(0x800,buffer,8)
+		local samples=$(buffer+4)
+		-- use qpa magic number to determine format
+		qpa_bits=@(buffer+3)-ord('0')
+		-- check that we haven't used reserved bits
+		-- (not supported in this player) and that
+		-- qpa_bits is valid
+		if samples&0xf0==0 and qpa_bits>=1 and qpa_bits<=5 then
+			qpa_decoder=qpa_decoder_new(qpa_configs[qpa_bits])
+		else
+			-- invalid format, so eject
+			ejected=true
+			recording=false
+			visualizer=1
+		end
 	end
 end
 function play_pcm()
