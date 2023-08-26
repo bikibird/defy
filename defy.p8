@@ -27,7 +27,7 @@ function header()
 		-- check that we haven't used reserved bits
 		-- (not supported in this player) and that
 		-- qpa_bits is valid
-		if samples&0xf0==0 and qpa_bits>=1 and qpa_bits<=5 then
+		if samples&0xff00==0 and qpa_bits>=1 and qpa_bits<=5 then
 			qpa_decoder=qpa_decoder_new(qpa_configs[qpa_bits])
 		else
 			-- invalid format, so eject
