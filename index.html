@@ -323,11 +323,11 @@ const QPA5_CONFIG = {
     magic: 0x35617071, /* 'qpa5' */
 };
 
-// Convert float audio data to unsigned 8-bit audio data, with a small amount of dither.
+// Convert float audio data to unsigned 8-bit audio data
 function floats_to_bytes(data) {
     const bytes = new Uint8Array(data.length);
     for (let i = 0; i < data.length; i++) {
-        bytes[i] = Math.max(0, Math.min(255, 128 + Math.trunc(-0.875 + .75*Math.random() + data[i] * 127.125)));
+        bytes[i] = Math.max(0, Math.min(255, 128 + Math.floor(data[i] * 128)));
     }
     return bytes;
 }
