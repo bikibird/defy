@@ -3,9 +3,11 @@ version 34
 __lua__
 -- defy, a pcm boombox
 -- by bikibird
+-- qpa support by luchak
 -- thanks, @luchak and @packbat, for the sound advice
 -- thanks, @gabe-8-bit, for help with the oscilloscope and testing
 -- thanks, @laz, for testing
+
 left,right,up,down,fire1,fire2=0,1,2,3,4,5
 black,dark_blue,dark_purple,dark_green,brown,dark_gray,light_gray,white,red,orange,yellow,green,blue,indigo,pink,peach=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 
