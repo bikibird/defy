@@ -433,12 +433,12 @@ class QPAEncoder {
         history[2] = history[3];
         history[3] = reconstructed >> this.predict_shift;
         this.signal_dc = (this.signal_dc + sample)*.5;
-        const rms_sample = sample - .875*this.signal_dc;
+        const rms_sample = sample - .95*this.signal_dc;
         this.rms += (rms_sample*rms_sample - this.rms)*(1/128);
         let error = from_pico(to_pico(sample+128)-((reconstructed+0x800000)&0xff0000));
 
         this.error_dc = (this.error_dc + error)*.5;
-        error -= .875*this.error_dc;
+        error -= .95*this.error_dc;
 
         this.idx += 1;
 
