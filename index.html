@@ -270,8 +270,8 @@ const QPA1_CONFIG = {
     residual_bits: 1,
     dequant_tab: [0.125, -0.125],
     chunk_size: 7,
-    update_shift: 4,
-    predict_shift: 8,
+    update_shift: 3,
+    predict_shift: 7,
     magic: 0x31617071, /* 'qpa1' */
 };
 
@@ -282,8 +282,8 @@ const QPA2_CONFIG = {
     residual_bits: 2,
     dequant_tab: [0x10/256, -0x10/256, 0x40/256, -0x40/256],
     chunk_size: 4,
-    update_shift: 4,
-    predict_shift: 8,
+    update_shift: 3,
+    predict_shift: 7,
     magic: 0x32617071, /* 'qpa2' */
 };
 
@@ -294,8 +294,8 @@ const QPA3_CONFIG = {
     residual_bits: 3,
     dequant_tab: [0x60/256,-0x60/256,0x14b/256,-0x14b/256,0x28f/256,-0x28f/256,0x400/256,-0x400/256],
     chunk_size: 3,
-    update_shift: 4,
-    predict_shift: 8,
+    update_shift: 3,
+    predict_shift: 7,
     magic: 0x33617071, /* 'qpa3' */
 };
 
@@ -306,8 +306,8 @@ const QPA4_CONFIG = {
     residual_bits: 3,
     dequant_tab: [0x2/256,-0x2/256,0x8/256,-0x8/256,0xf/256,-0xf/256,0x18/256,-0x18/256],
     chunk_size: 3,
-    update_shift: 4,
-    predict_shift: 8,
+    update_shift: 3,
+    predict_shift: 7,
     magic: 0x34617071, /* 'qpa4' */
 };
 
@@ -318,8 +318,8 @@ const QPA5_CONFIG = {
     residual_bits: 4,
     dequant_tab: [0x6/256, -0x6/256, 0x14/256, -0x14/256, 0x24/256, -0x24/256, 0x35/256, -0x35/256, 0x47/256, -0x47/256, 0x5a/256, -0x5a/256, 0x6d/256, -0x6d/256, .5, -.5],
     chunk_size: 2,
-    update_shift: 4,
-    predict_shift: 8,
+    update_shift: 3,
+    predict_shift: 7,
     magic: 0x35617071, /* 'qpa5' */
 };
 
@@ -442,7 +442,15 @@ class QPAEncoder {
 
         this.idx += 1;
 
-        return error*error/(16+this.rms);
+        const next_prediction = this.predict();
+        return (
+            (error * error) / (16 + this.rms) +
+            Math.max(
+                0,
+                to_pico(-128) - next_prediction,
+                next_prediction - to_pico(127)
+            )*1e-8
+        );
     }
 
     clone_from(other) {
